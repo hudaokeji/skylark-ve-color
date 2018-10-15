@@ -1139,7 +1139,7 @@ define([
                 if (spect) {
                     var method = spect[opts];
                     if (!method) {
-                        throw new Error( "Spectrum: no such method: '" + opts + "'" );
+                        throw new Error( "skylark-ui-colorpicker: no such method: '" + opts + "'" );
                     }
 
                     if (opts == "get") {
