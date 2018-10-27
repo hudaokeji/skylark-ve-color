@@ -12,7 +12,7 @@
 | [skylark-utils](https://github.com/skylarkutils/skylark-utils) |        | An Universal HTML5 Javascript Library                 |
 | [skylark-utils-color](https://github.com/skylarkutils/skylark-utils-color) |        | The dom layout features enhancement for skylark utils |
 | [skylark-utils-interact](https://github.com/skylarkutils/skylark-utils-interact) |        | The interact features enhancement for skylark utils   |
-| [skylark-utils-swt](https://github.com/skylarkutils/skylark-utils-swt) |        | The skylark standard widget tookit                    |
+| [skylark-ui-swt](https://github.com/skylarkutils/skylark-ui-swt) |        | The skylark standard widget tookit                    |
 | [skylark-utils-dom](https://github.com/skylarkutils/skylark-utils-dom) |        | An Universal DOM Utility Library                      |
 
 ## Different builds
