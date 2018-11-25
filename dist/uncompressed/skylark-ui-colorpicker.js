@@ -56,7 +56,7 @@
                 args.push(require(dep));
             })
 
-            module.exports = module.factory.apply(window, args);
+            module.exports = module.factory.apply(globals, args);
         }
         return module.exports;
     };
@@ -72,7 +72,7 @@
     var skylarkjs = require("skylark-langx/skylark");
 
     if (isCmd) {
-      exports = skylarkjs;
+      module.exports = skylarkjs;
     } else {
       globals.skylarkjs  = skylarkjs;
     }
@@ -83,11 +83,11 @@
 define('skylark-ui-colorpicker/ColorPicker',[
    "skylark-langx/skylark",
     "skylark-langx/langx",
-    "skylark-utils/browser",
-    "skylark-utils/noder",
-    "skylark-utils/eventer",
-    "skylark-utils/finder",
-    "skylark-utils/query",
+    "skylark-utils-dom/browser",
+    "skylark-utils-dom/noder",
+    "skylark-utils-dom/eventer",
+    "skylark-utils-dom/finder",
+    "skylark-utils-dom/query",
     "skylark-utils-color/colors",
     "skylark-utils-color/Color",
     "skylark-ui-swt/ui",
@@ -1049,7 +1049,7 @@ define('skylark-ui-colorpicker/ColorPicker',[
         return spect;
     }
 
-    var ColorPicker = Widget.inherit({
+    var ColorPicker = langx.Evented.inherit({
         klassName : "ColorPicker",
 
         init : init

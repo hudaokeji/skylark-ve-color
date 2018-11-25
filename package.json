@@ -14,55 +14,24 @@
   "homepage": "https://github.com/skylarkui/skylark-ui-colorpicker/",
   "author": "Hudaokeji, Inc.",
   "scripts": {
-    "build": "sbundle build .",
-    "change-version": "node grunt/change-version.js",
-    "update-shrinkwrap": "npm shrinkwrap --dev && shx mv ./npm-shrinkwrap.json ./grunt/npm-shrinkwrap.json",
-    "test": "grunt test"
+    "build": "sbundle build ."
   },
-  "style": "dist/css/bootstrap.css",
-  "less": "less/bootstrap.less",
-  "main": "./dist/js/main",
   "repository": {
     "type": "git",
-    "url": "https://github.com/skylarkui/skylark-ui-window.git"
+    "url": "https://github.com/skylarkui/skylark-ui-colorpicker.git"
   },
   "bugs": {
-    "url": "https://github.com/skylarkui/skylark-bs-window/issues"
+    "url": "https://github.com/skylarkui/skylark-ui-colorpicker/issues"
   },
   "license": "MIT",
-  "devDependencies": {
+  "dependencies": {
     "skylark-langx": "https://github.com/skylarklangx/skylark-langx#master",
-    "skylark-utils": "https://github.com/skylarkutils/skylark-utils#master",
     "skylark-utils-color": "https://github.com/skylarkutils/skylark-utils-color#master",
     "skylark-utils-interact": "https://github.com/skylarkutils/skylark-utils-interact#master",
     "skylark-ui-swt": "https://github.com/skylarkui/skylark-ui-swt#master",
     "skylark-utils-dom": "https://github.com/skylarkutils/skylark-utils-dom#master"
-
   },
   "engines": {
     "node": ">=0.10.1"
-  },
-  "files": [
-    "dist",
-    "fonts",
-    "grunt",
-    "js/*.js",
-    "less/**/*.less",
-    "Gruntfile.js",
-    "LICENSE"
-  ],
-  "jspm": {
-    "main": "js/bootstrap",
-    "shim": {
-      "js/bootstrap": {
-        "deps": "jquery",
-        "exports": "$"
-      }
-    },
-    "files": [
-      "css",
-      "fonts",
-      "js"
-    ]
   }
 }
