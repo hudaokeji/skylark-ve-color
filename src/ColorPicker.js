@@ -6,8 +6,8 @@ define([
     "skylark-utils-dom/eventer",
     "skylark-utils-dom/finder",
     "skylark-utils-dom/query",
-    "skylark-utils-color/colors",
-    "skylark-utils-color/Color",
+    "skylark-data-color/colors",
+    "skylark-data-color/Color",
     "skylark-ui-swt/ui",
     "skylark-ui-swt/Widget"
 ],function(skylark, langx, browser, noder, eventer,finder, $, colors, Color, ui, Widget) {
