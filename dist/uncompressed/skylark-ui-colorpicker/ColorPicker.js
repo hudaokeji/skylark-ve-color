@@ -8,9 +8,9 @@ define([
     "skylark-utils-dom/query",
     "skylark-data-color/colors",
     "skylark-data-color/Color",
-    "skylark-ui-swt/ui",
+    "skylark-ui-swt/swt",
     "skylark-ui-swt/Widget"
-],function(skylark, langx, browser, noder, eventer,finder, $, colors, Color, ui, Widget) {
+],function(skylark, langx, browser, noder, eventer,finder, $, colors, Color, swt, Widget) {
     "use strict";
 
     var noop = langx.noop;
@@ -1182,6 +1182,6 @@ define([
 
     $.fn.colorPicker = Plugin;
 
-    return ColorPicker;
+    return skylark.attach("ui.ColorPicker",ColorPicker);
 
 });
