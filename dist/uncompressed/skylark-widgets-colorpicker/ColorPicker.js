@@ -8,8 +8,8 @@ define([
     "skylark-utils-dom/query",
     "skylark-data-color/colors",
     "skylark-data-color/Color",
-    "skylark-ui-swt/swt",
-    "skylark-ui-swt/Widget"
+    "skylark-widgets-swt/swt",
+    "skylark-widgets-swt/Widget"
 ],function(skylark, langx, browser, noder, eventer,finder, $, colors, Color, swt, Widget) {
     "use strict";
 

@@ -1,8 +1,8 @@
 /**
- * skylark-ui-colorpicker - The skylark color picker widget
+ * skylark-widgets-colorpicker - The skylark color picker widget
  * @author Hudaokeji, Inc.
  * @version v0.9.0
- * @link https://github.com/skylarkui/skylark-ui-colorpicker/
+ * @link https://github.com/skylarkui/skylark-widgets-colorpicker/
  * @license MIT
  */
 (function(factory,globals) {
@@ -86,7 +86,7 @@
 
 })(function(define,require) {
 
-define('skylark-ui-colorpicker/ColorPicker',[
+define('skylark-widgets-colorpicker/ColorPicker',[
    "skylark-langx/skylark",
     "skylark-langx/langx",
     "skylark-utils-dom/browser",
@@ -96,8 +96,8 @@ define('skylark-ui-colorpicker/ColorPicker',[
     "skylark-utils-dom/query",
     "skylark-data-color/colors",
     "skylark-data-color/Color",
-    "skylark-ui-swt/swt",
-    "skylark-ui-swt/Widget"
+    "skylark-widgets-swt/swt",
+    "skylark-widgets-swt/Widget"
 ],function(skylark, langx, browser, noder, eventer,finder, $, colors, Color, swt, Widget) {
     "use strict";
 
@@ -1274,7 +1274,7 @@ define('skylark-ui-colorpicker/ColorPicker',[
 
 });
 
-define('skylark-ui-colorpicker/i18n/texts_ja',[
+define('skylark-widgets-colorpicker/i18n/texts_ja',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["ja"] = {
@@ -1284,7 +1284,7 @@ define('skylark-ui-colorpicker/i18n/texts_ja',[
 
     return localization;
 });
-define('skylark-ui-colorpicker/i18n/texts_zh-cn',[
+define('skylark-widgets-colorpicker/i18n/texts_zh-cn',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["zh-cn"] = {
@@ -1300,7 +1300,7 @@ define('skylark-ui-colorpicker/i18n/texts_zh-cn',[
 
 });
 
-define('skylark-ui-colorpicker/i18n/texts_zh-tw',[
+define('skylark-widgets-colorpicker/i18n/texts_zh-tw',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["zh-tw"] = {
@@ -1315,7 +1315,7 @@ define('skylark-ui-colorpicker/i18n/texts_zh-tw',[
     return localization;
 
 });
-define('skylark-ui-colorpicker/main',[
+define('skylark-widgets-colorpicker/main',[
     "./ColorPicker",
     "./i18n/texts_ja",
     "./i18n/texts_zh-cn",
@@ -1324,8 +1324,8 @@ define('skylark-ui-colorpicker/main',[
     return ColorPicker;
 });
 
-define('skylark-ui-colorpicker', ['skylark-ui-colorpicker/main'], function (main) { return main; });
+define('skylark-widgets-colorpicker', ['skylark-widgets-colorpicker/main'], function (main) { return main; });
 
 
 },this);
-//# sourceMappingURL=sourcemaps/skylark-ui-colorpicker.js.map
+//# sourceMappingURL=sourcemaps/skylark-widgets-colorpicker.js.map
