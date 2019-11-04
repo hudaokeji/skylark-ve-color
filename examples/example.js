@@ -1,4 +1,4 @@
-var $ = skylarkjs.dom.query;
+var $ = skylarkjs.domx.query;
 
 $(function() {
 
