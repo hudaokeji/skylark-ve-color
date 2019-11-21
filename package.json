@@ -27,7 +27,8 @@
   "dependencies": {
     "skylark-data-color": "git+https://github.com/skylark-data/skylark-data-color.git#master",
     "skylark-domx-interact": "git+https://github.com/skylark-domx/skylark-domx-interact.git#master",
-    "skylark-langx": "git+https://github.com/skylarklangx/skylark-langx.git#master",
+    "skylark-langx": "git+https://github.com/skylark-langx/skylark-langx.git#master",
+    "skylark-widgets-base": "git+https://github.com/skylark-widgets/skylark-widgets-base.git#master",
     "skylark-widgets-swt": "git+https://github.com/skylark-widgets/skylark-widgets-swt.git#master"
   },
   "engines": {
