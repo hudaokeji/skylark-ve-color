@@ -131,7 +131,8 @@ define('skylark-langx/skylark',[
 define('skylark-langx-types/types',[
     "skylark-langx-ns"
 ],function(skylark){
-    var toString = {}.toString;
+    var nativeIsArray = Array.isArray, 
+        toString = {}.toString;
     
     var type = (function() {
         var class2type = {};
@@ -147,9 +148,10 @@ define('skylark-langx-types/types',[
         };
     })();
 
-    function isArray(object) {
+ 
+    var  isArray = nativeIsArray || function(obj) {
         return object && object.constructor === Array;
-    }
+    };
 
 
     /**
@@ -192,7 +194,8 @@ define('skylark-langx-types/types',[
      * // => false
      */
     function isBoolean(obj) {
-        return typeof(obj) === "boolean";
+       return obj === true || obj === false || toString.call(obj) === '[object Boolean]';
+       //return typeof(obj) === "boolean";
     }
 
     function isDefined(obj) {
@@ -202,6 +205,11 @@ define('skylark-langx-types/types',[
     function isDocument(obj) {
         return obj != null && obj.nodeType == obj.DOCUMENT_NODE;
     }
+
+   // Is a given value a DOM element?
+    function isElement(obj) {
+        return !!(obj && obj.nodeType === 1);
+    }   
 
     function isEmptyObject(obj) {
         var name;
@@ -231,6 +239,8 @@ define('skylark-langx-types/types',[
         return type(value) == "function";
     }
 
+
+
     function isHtmlNode(obj) {
         return obj && obj.nodeType; // obj instanceof Node; //Consider the elements in IFRAME
     }
@@ -254,8 +264,9 @@ define('skylark-langx-types/types',[
         }
     }
 
-    function isNull(value) {
-      return type(value) === "null";
+
+    function isNull(obj) {
+        return obj === null;
     }
 
     function isNumber(obj) {
@@ -263,7 +274,9 @@ define('skylark-langx-types/types',[
     }
 
     function isObject(obj) {
-        return type(obj) == "object";
+        var type = typeof obj;
+        return type === 'function' || type === 'object' && !!obj;        
+        //return type(obj) == "object";
     }
 
     function isPlainObject(obj) {
@@ -306,8 +319,9 @@ define('skylark-langx-types/types',[
         (isObjectLike(value) && objectToString.call(value) == symbolTag);
     }
 
-    function isUndefined(value) {
-      return value === undefined
+    // Is a given variable undefined?
+    function isUndefined(obj) {
+        return obj === void 0;
     }
 
     return skylark.attach("langx.types",{
@@ -321,6 +335,8 @@ define('skylark-langx-types/types',[
         isDefined: isDefined,
 
         isDocument: isDocument,
+
+        isElement,
 
         isEmpty : isEmptyObject,
 
@@ -1008,8 +1024,9 @@ define('skylark-langx-arrays/arrays',[
   "skylark-langx-types",
   "skylark-langx-objects"
 ],function(skylark,types,objects){
-	var filter = Array.prototype.filter,
-		isArrayLike = types.isArrayLike;
+  var filter = Array.prototype.filter,
+      find = Array.prototype.find,
+    isArrayLike = types.isArrayLike;
 
     /**
      * The base implementation of `_.findIndex` and `_.findLastIndex` without
@@ -1192,6 +1209,10 @@ define('skylark-langx-arrays/arrays',[
         })
     }
 
+    function find2(array,func) {
+      return find.call(array,func);
+    }
+
     return skylark.attach("langx.arrays",{
         baseFindIndex: baseFindIndex,
 
@@ -1208,6 +1229,8 @@ define('skylark-langx-arrays/arrays',[
         },
 
         filter : filter2,
+
+        find : find2,
         
         flatten: flatten,
 
@@ -2054,76 +2077,133 @@ define('skylark-langx-funcs/funcs',[
         };
     })();
 
-  var templateSettings = {
-    evaluate: /<%([\s\S]+?)%>/g,
-    interpolate: /<%=([\s\S]+?)%>/g,
-    escape: /<%-([\s\S]+?)%>/g
-  };
 
-
-  function template(text, settings, oldSettings) {
-    if (!settings && oldSettings) settings = oldSettings;
-    settings = objects.defaults({}, settings,templateSettings);
-
-    // Combine delimiters into one regular expression via alternation.
-    var matcher = RegExp([
-      (settings.escape || noMatch).source,
-      (settings.interpolate || noMatch).source,
-      (settings.evaluate || noMatch).source
-    ].join('|') + '|$', 'g');
-
-    // Compile the template source, escaping string literals appropriately.
-    var index = 0;
-    var source = "__p+='";
-    text.replace(matcher, function(match, escape, interpolate, evaluate, offset) {
-      source += text.slice(index, offset).replace(escapeRegExp, escapeChar);
-      index = offset + match.length;
-
-      if (escape) {
-        source += "'+\n((__t=(" + escape + "))==null?'':_.escape(__t))+\n'";
-      } else if (interpolate) {
-        source += "'+\n((__t=(" + interpolate + "))==null?'':__t)+\n'";
-      } else if (evaluate) {
-        source += "';\n" + evaluate + "\n__p+='";
-      }
-
-      // Adobe VMs need the match returned to produce the correct offset.
-      return match;
-    });
-    source += "';\n";
-
-    // If a variable is not specified, place data values in local scope.
-    if (!settings.variable) source = 'with(obj||{}){\n' + source + '}\n';
-
-    source = "var __t,__p='',__j=Array.prototype.join," +
-      "print=function(){__p+=__j.call(arguments,'');};\n" +
-      source + 'return __p;\n';
-
-    var render;
-    try {
-      render = new Function(settings.variable || 'obj', '_', source);
-    } catch (e) {
-      e.source = source;
-      throw e;
-    }
-
-    var template = function(data) {
-      return render.call(this, data, _);
+    // By default, Underscore uses ERB-style template delimiters, change the
+    // following template settings to use alternative delimiters.
+    var templateSettings = {
+        evaluate: /<%([\s\S]+?)%>/g,
+        interpolate: /<%=([\s\S]+?)%>/g,
+        escape: /<%-([\s\S]+?)%>/g
     };
 
-    // Provide the compiled source as a convenience for precompilation.
-    var argument = settings.variable || 'obj';
-    template.source = 'function(' + argument + '){\n' + source + '}';
+    // When customizing `templateSettings`, if you don't want to define an
+    // interpolation, evaluation or escaping regex, we need one that is
+    // guaranteed not to match.
+    var noMatch = /(.)^/;
 
-    return template;
-  };
+
+    // Certain characters need to be escaped so that they can be put into a
+    // string literal.
+    var escapes = {
+      "'":      "'",
+      '\\':     '\\',
+      '\r':     'r',
+      '\n':     'n',
+      '\t':     't',
+      '\u2028': 'u2028',
+      '\u2029': 'u2029'
+    };
+
+    var escaper = /\\|'|\r|\n|\t|\u2028|\u2029/g;
+
+
+    function template(text, data, settings) {
+        var render;
+        settings = objects.defaults({}, settings,templateSettings);
+
+        // Combine delimiters into one regular expression via alternation.
+        var matcher = RegExp([
+          (settings.escape || noMatch).source,
+          (settings.interpolate || noMatch).source,
+          (settings.evaluate || noMatch).source
+        ].join('|') + '|$', 'g');
+
+        // Compile the template source, escaping string literals appropriately.
+        var index = 0;
+        var source = "__p+='";
+        text.replace(matcher, function(match, escape, interpolate, evaluate, offset) {
+          source += text.slice(index, offset)
+              .replace(escaper, function(match) { return '\\' + escapes[match]; });
+
+          if (escape) {
+            source += "'+\n((__t=(" + escape + "))==null?'':_.escape(__t))+\n'";
+          }
+          if (interpolate) {
+            source += "'+\n((__t=(" + interpolate + "))==null?'':__t)+\n'";
+          }
+          if (evaluate) {
+            source += "';\n" + evaluate + "\n__p+='";
+          }
+          index = offset + match.length;
+          return match;
+        });
+        source += "';\n";
+
+        // If a variable is not specified, place data values in local scope.
+        if (!settings.variable) source = 'with(obj||{}){\n' + source + '}\n';
+
+        source = "var __t,__p='',__j=Array.prototype.join," +
+          "print=function(){__p+=__j.call(arguments,'');};\n" +
+          source + 'return __p;\n';
+
+        try {
+          render = new Function(settings.variable || 'obj', '_', source);
+        } catch (e) {
+          e.source = source;
+          throw e;
+        }
+
+        if (data) {
+          return render(data,this)
+        }
+        var template = proxy(function(data) {
+          return render.call(this, data,this);
+        },this);
+
+        // Provide the compiled source as a convenience for precompilation.
+        var argument = settings.variable || 'obj';
+        template.source = 'function(' + argument + '){\n' + source + '}';
+
+        return template;
+    }
+
+
+    /**
+     * Creates a function that negates the result of the predicate `func`. The
+     * `func` predicate is invoked with the `this` binding and arguments of the
+     * created function.
+     * @category Function
+     * @param {Function} predicate The predicate to negate.
+     * @returns {Function} Returns the new negated function.
+     * @example
+     *
+     * function isEven(n) {
+     *   return n % 2 == 0
+     * }
+     *
+     * filter([1, 2, 3, 4, 5, 6], negate(isEven))
+     * // => [1, 3, 5]
+     */
+    function negate(predicate) {
+      if (typeof predicate !== 'function') {
+        throw new TypeError('Expected a function')
+      }
+      return function(...args) {
+        return !predicate.apply(this, args)
+      }
+    }
+
 
     return skylark.attach("langx.funcs",{
+        bind : proxy,
+        
         debounce: debounce,
 
         delegate: delegate,
 
         defer: defer,
+
+        negate: negate,
 
         noop : noop,
 
@@ -2154,9 +2234,6 @@ define('skylark-langx-async/Deferred',[
     "skylark-langx-objects"
 ],function(arrays,funcs,objects){
     "use strict";
-    
-    var  PGLISTENERS = Symbol ? Symbol() : '__pglisteners',
-         PGNOTIFIES = Symbol ? Symbol() : '__pgnotifies';
 
     var slice = Array.prototype.slice,
         proxy = funcs.proxy,
@@ -2188,15 +2265,15 @@ define('skylark-langx-async/Deferred',[
 
     var Deferred = function() {
         var self = this,
-            p = this.promise = new Promise(function(resolve, reject) {
+            p = this.promise = makePromise2(new Promise(function(resolve, reject) {
                 self._resolve = resolve;
                 self._reject = reject;
-            });
+            }));
 
-        wrapPromise(p,self);
+        //wrapPromise(p,self);
 
-        this[PGLISTENERS] = [];
-        this[PGNOTIFIES] = [];
+        //this[PGLISTENERS] = [];
+        //this[PGNOTIFIES] = [];
 
         //this.resolve = Deferred.prototype.resolve.bind(this);
         //this.reject = Deferred.prototype.reject.bind(this);
@@ -2204,52 +2281,97 @@ define('skylark-langx-async/Deferred',[
 
     };
 
-    function wrapPromise(p,d) {
-        var   added = {
-                state : function() {
-                    if (d.isResolved()) {
-                        return 'resolved';
+   
+    function makePromise2(promise) {
+        // Don't modify any promise that has been already modified.
+        if (promise.isResolved) return promise;
+
+        // Set initial state
+        var isPending = true;
+        var isRejected = false;
+        var isResolved = false;
+
+        // Observe the promise, saving the fulfillment in a closure scope.
+        var result = promise.then(
+            function(v) {
+                isResolved = true;
+                isPending = false;
+                return v; 
+            }, 
+            function(e) {
+                isRejected = true;
+                isPending = false;
+                throw e; 
+            }
+        );
+
+        result.isResolved = function() { return isResolved; };
+        result.isPending = function() { return isPending; };
+        result.isRejected = function() { return isRejected; };
+
+        result.state = function() {
+            if (isResolved) {
+                return 'resolved';
+            }
+            if (isRejected) {
+                return 'rejected';
+            }
+            return 'pending';
+        };
+
+        var notified = [],
+            listeners = [];
+
+          
+        result.then = function(onResolved,onRejected,onProgress) {
+            if (onProgress) {
+                this.progress(onProgress);
+            }
+            return makePromise2(Promise.prototype.then.call(this,
+                onResolved && function(args) {
+                    if (args && args.__ctx__ !== undefined) {
+                        return onResolved.apply(args.__ctx__,args);
+                    } else {
+                        return onResolved(args);
                     }
-                    if (d.isRejected()) {
-                        return 'rejected';
-                    }
-                    return 'pending';
                 },
-                then : function(onResolved,onRejected,onProgress) {
-                    if (onProgress) {
-                        this.progress(onProgress);
+                onRejected && function(args){
+                    if (args && args.__ctx__ !== undefined) {
+                        return onRejected.apply(args.__ctx__,args);
+                    } else {
+                        return onRejected(args);
                     }
-                    return wrapPromise(Promise.prototype.then.call(this,
-                            onResolved && function(args) {
-                                if (args && args.__ctx__ !== undefined) {
-                                    return onResolved.apply(args.__ctx__,args);
-                                } else {
-                                    return onResolved(args);
-                                }
-                            },
-                            onRejected && function(args){
-                                if (args && args.__ctx__ !== undefined) {
-                                    return onRejected.apply(args.__ctx__,args);
-                                } else {
-                                    return onRejected(args);
-                                }
-                            }));
-                },
-                progress : function(handler) {
-                    d[PGNOTIFIES].forEach(function (value) {
-                        handler(value);
-                    });
-                    d[PGLISTENERS].push(handler);
-                    return this;
                 }
+            ));
+        };
 
-            };
+        result.progress = function(handler) {
+            notified.forEach(function (value) {
+                handler(value);
+            });
+            listeners.push(handler);
+            return this;
+        };
 
-        added.pipe = added.then;
-        return mixin(p,added);
+        result.pipe = result.then;
 
+        result.notify = function(value) {
+            try {
+                notified.push(value);
+
+                return listeners.forEach(function (listener) {
+                    return listener(value);
+                });
+            } catch (error) {
+            this.reject(error);
+            }
+            return this;
+        };
+
+        return result;
     }
 
+ 
     Deferred.prototype.resolve = function(value) {
         var args = slice.call(arguments);
         return this.resolveWith(null,args);
@@ -2264,15 +2386,8 @@ define('skylark-langx-async/Deferred',[
     };
 
     Deferred.prototype.notify = function(value) {
-        try {
-            this[PGNOTIFIES].push(value);
-
-            return this[PGLISTENERS].forEach(function (listener) {
-                return listener(value);
-            });
-        } catch (error) {
-          this.reject(error);
-        }
+        var p = result(this,"promise");
+        p.notify(value);
         return this;
     };
 
@@ -2290,11 +2405,18 @@ define('skylark-langx-async/Deferred',[
     };
 
     Deferred.prototype.isResolved = function() {
-        return !!this._resolved;
+        var p = result(this,"promise");
+        return p.isResolved();
     };
 
     Deferred.prototype.isRejected = function() {
-        return !!this._rejected;
+        var p = result(this,"promise");
+        return p.isRejected();
+    };
+
+    Deferred.prototype.state = function() {
+        var p = result(this,"promise");
+        return p.state();
     };
 
     Deferred.prototype.then = function(callback, errback, progback) {
@@ -2313,14 +2435,22 @@ define('skylark-langx-async/Deferred',[
     };
 
 
+    Deferred.prototype.always  = function() {
+        var p = result(this,"promise");
+        p.always.apply(p,arguments);
+        return this;
+    };
+
     Deferred.prototype.done  = function() {
         var p = result(this,"promise");
-        return p.done.apply(p,arguments);
+        p.done.apply(p,arguments);
+        return this;
     };
 
     Deferred.prototype.fail = function(errback) {
         var p = result(this,"promise");
-        return p.fail(errback);
+        p.fail(errback);
+        return this;
     };
 
 
@@ -2332,7 +2462,7 @@ define('skylark-langx-async/Deferred',[
     };
 
     Deferred.first = function(array) {
-        return wrapPromise(Promise.race(array));
+        return makePromise2(Promise.race(array));
     };
 
 
@@ -2371,6 +2501,15 @@ define('skylark-langx-async/Deferred',[
     };
 
     Deferred.immediate = Deferred.resolve;
+
+
+    Deferred.promise = function(callback) {
+        var d = new Deferred();
+
+        callback(d.resolve.bind(d),d.reject.bind(d),d.progress.bind(d));
+
+        return d.promise;
+    };
 
     return Deferred;
 });
@@ -2527,7 +2666,7 @@ define('skylark-langx/Deferred',[
 ],function(Deferred){
     return Deferred;
 });
-define('skylark-langx-emitter/Evented',[
+define('skylark-langx-emitter/Emitter',[
   "skylark-langx-ns/ns",
   "skylark-langx-types",
   "skylark-langx-objects",
@@ -2541,7 +2680,8 @@ define('skylark-langx-emitter/Evented',[
         isFunction = types.isFunction,
         isString = types.isString,
         isEmptyObject = types.isEmptyObject,
-        mixin = objects.mixin;
+        mixin = objects.mixin,
+        safeMixin = objects.safeMixin;
 
     function parse(event) {
         var segs = ("" + event).split(".");
@@ -2551,7 +2691,7 @@ define('skylark-langx-emitter/Evented',[
         };
     }
 
-    var Evented = klass({
+    var Emitter = klass({
         on: function(events, selector, data, callback, ctx, /*used internally*/ one) {
             var self = this,
                 _hub = this._hub || (this._hub = {});
@@ -2603,7 +2743,7 @@ define('skylark-langx-emitter/Evented',[
             return this.on(events, selector, data, callback, ctx, 1);
         },
 
-        trigger: function(e /*,argument list*/ ) {
+        emit: function(e /*,argument list*/ ) {
             if (!this._hub) {
                 return this;
             }
@@ -2804,19 +2944,40 @@ define('skylark-langx-emitter/Evented',[
             }
 
             return this;
+        },
+
+        trigger  : function() {
+            return this.emit.apply(this,arguments);
         }
     });
 
-    return skylark.attach("langx.Evented",Evented);
+    Emitter.createEvent = function (type,props) {
+        var e = new CustomEvent(type,props);
+        return safeMixin(e, props);
+    };
+
+    return skylark.attach("langx.Emitter",Emitter);
 
 });
+define('skylark-langx-emitter/Evented',[
+  "skylark-langx-ns/ns",
+	"./Emitter"
+],function(skylark,Emitter){
+	return skylark.attach("langx.Evented",Emitter);
+});
 define('skylark-langx-emitter/main',[
+	"./Emitter",
 	"./Evented"
-],function(Evented){
-	return Evented;
+],function(Emitter){
+	return Emitter;
 });
 define('skylark-langx-emitter', ['skylark-langx-emitter/main'], function (main) { return main; });
 
+define('skylark-langx/Emitter',[
+    "skylark-langx-emitter"
+],function(Evented){
+    return Evented;
+});
 define('skylark-langx/Evented',[
     "skylark-langx-emitter"
 ],function(Evented){
@@ -3207,7 +3368,7 @@ define('skylark-langx-strings/strings',[
 
         slugify : slugify,
 
-        template : template,
+        //template : template,
 
         trim: trim,
 
@@ -3499,6 +3660,7 @@ define('skylark-langx/langx',[
     "./async",
     "./datetimes",
     "./Deferred",
+    "./Emitter",
     "./Evented",
     "./funcs",
     "./hoster",
@@ -3509,7 +3671,7 @@ define('skylark-langx/langx',[
     "./strings",
     "./topic",
     "./types"
-], function(skylark,arrays,ArrayStore,aspect,async,datetimes,Deferred,Evented,funcs,hoster,klass,numbers,objects,Stateful,strings,topic,types) {
+], function(skylark,arrays,ArrayStore,aspect,async,datetimes,Deferred,Emitter,Evented,funcs,hoster,klass,numbers,objects,Stateful,strings,topic,types) {
     "use strict";
     var toString = {}.toString,
         concat = Array.prototype.concat,
@@ -3520,13 +3682,6 @@ define('skylark-langx/langx',[
         safeMixin = objects.safeMixin,
         isFunction = types.isFunction;
 
-
-    function createEvent(type, props) {
-        var e = new CustomEvent(type, props);
-
-        return safeMixin(e, props);
-    }
-    
 
     function funcArg(context, arg, idx, payload) {
         return isFunction(arg) ? arg.call(context, idx, payload) : arg;
@@ -3565,7 +3720,7 @@ define('skylark-langx/langx',[
     }
 
     mixin(langx, {
-        createEvent : createEvent,
+        createEvent : Emitter.createEvent,
 
         funcArg: funcArg,
 
@@ -3586,6 +3741,8 @@ define('skylark-langx/langx',[
         async : async,
         
         Deferred: Deferred,
+
+        Emitter: Emitter,
 
         Evented: Evented,
 
@@ -3890,7 +4047,14 @@ define('skylark-domx-noder/noder',[
      * @param } parent
      */
     function createElement(tag, props, parent) {
-        var node = document.createElement(tag);
+        var node;
+
+        if (/svg/i.test(tag)) {
+            node = document.createElementNS("http://www.w3.org/2000/svg", tag)
+        } else {
+            node = document.createElement(tag);
+        }
+
         if (props) {
             for (var name in props) {
                 node.setAttribute(name, props[name]);
@@ -3901,6 +4065,16 @@ define('skylark-domx-noder/noder',[
         }
         return node;
     }
+
+function removeSelfClosingTags(xml) {
+    var split = xml.split("/>");
+    var newXml = "";
+    for (var i = 0; i < split.length - 1;i++) {
+        var edsplit = split[i].split("<");
+        newXml += split[i] + "></" + edsplit[edsplit.length - 1].split(" ")[0] + ">";
+    }
+    return newXml + split[split.length-1];
+}
 
     /*   
      * Create a DocumentFragment from the HTML fragment.
@@ -3918,7 +4092,7 @@ define('skylark-domx-noder/noder',[
             name = "*"
         }
         var container = containers[name];
-        container.innerHTML = "" + html;
+        container.innerHTML = removeSelfClosingTags("" + html);
         dom = slice.call(container.childNodes);
 
         dom.forEach(function(node) {
@@ -4076,7 +4250,7 @@ define('skylark-domx-noder/noder',[
                 node.appendChild(html);
             }
 
-
+            return this;
         }
     }
 
@@ -4761,6 +4935,9 @@ define('skylark-domx-finder/finder',[
 
         'visible': function(elm) {
             return elm.offsetWidth && elm.offsetWidth
+        },
+        'empty': function(elm) {
+            return !elm.hasChildNodes();
         }
     };
 
@@ -5170,14 +5347,17 @@ define('skylark-domx-finder/finder',[
                     break;
                 }
             }
-            ret.push(node); // TODO
+            if (!selector || matches(node, selector)) {
+              ret.push(node); 
+            }
         }
 
-        if (selector) {
-            ret = local.filter(ret, selector);
-        }
+        //if (selector) {
+        //    ret = local.filter(ret, selector);
+        //}
         return ret;
     }
+
 
     /*
      * Returns a element by its ID.
@@ -5687,12 +5867,10 @@ define('skylark-domx-data/data',[
                 }
                 return this;
             } else {
-                if (elm.hasAttribute && elm.hasAttribute(name)) {
-                    return elm.getAttribute(name);
-                }
+                return elm.getAttribute ? elm.getAttribute(name) : elm[name];
             }
         } else {
-            elm.setAttribute(name, value);
+            elm.setAttribute ? elm.setAttribute(name, value) : elm[name] = value;
             return this;
         }
     }
@@ -6050,9 +6228,11 @@ define('skylark-domx-query/query',[
                 params = slice.call(arguments);
             var result = this.map(function(idx, elem) {
                 // if (elem.nodeType == 1) {
-                //if (elem.querySelector) {
+                if (elem.querySelector) {
                     return func.apply(context, last ? [elem] : [elem, selector]);
-                //}
+                } else {
+                    return [];
+                }
             });
             if (last && selector) {
                 return result.filter(selector);
@@ -6074,6 +6254,8 @@ define('skylark-domx-query/query',[
                 // if (elem.nodeType == 1) { // TODO
                 //if (elem.querySelector) {
                     return func.apply(context, last ? [elem, util] : [elem, selector, util]);
+                //} else {
+                //    return [];
                 //}
             });
             if (last && selector) {
@@ -6102,7 +6284,7 @@ define('skylark-domx-query/query',[
                 params = slice.call(arguments);
             forEach.call(self, function(elem, idx) {
                 var newArg1 = funcArg(elem, arg1, idx, oldValueFunc(elem));
-                func.apply(context, [elem, arg1].concat(params.slice(1)));
+                func.apply(context, [elem, newArg1].concat(params.slice(1)));
             });
             return self;
         }
@@ -6120,8 +6302,7 @@ define('skylark-domx-query/query',[
 
     function wrapper_name_value(func, context, oldValueFunc) {
         return function(name, value) {
-            var self = this,
-                params = slice.call(arguments);
+            var self = this;
 
             if (langx.isPlainObject(name) || langx.isDefined(value)) {
                 forEach.call(self, function(elem, idx) {
@@ -6131,7 +6312,7 @@ define('skylark-domx-query/query',[
                     } else {
                         newValue = value
                     }
-                    func.apply(context, [elem].concat(params));
+                    func.apply(context, [elem,name,newValue]);
                 });
                 return self;
             } else {
@@ -6258,6 +6439,7 @@ define('skylark-domx-query/query',[
                 $.ready(function() {
                     selector($);
                 });
+                return rootQuery;
             } else if (isQ(selector)) {
                 return selector;
             } else {
@@ -6266,7 +6448,7 @@ define('skylark-domx-query/query',[
                 }
                 return init(selector, context);
             }
-        };
+        },rootQuery = $(document);
 
         $.fn = NodeList.prototype;
         langx.mixin($.fn, {
@@ -6438,7 +6620,8 @@ define('skylark-domx-query/query',[
                 return this.before(newContent).remove();
             },
 
-            wrap: function(structure) {
+            wrap: function(html) {
+                /*
                 var func = isFunction(structure)
                 if (this[0] && !func)
                     var dom = $(structure).get(0),
@@ -6450,9 +6633,16 @@ define('skylark-domx-query/query',[
                         clone ? dom.cloneNode(true) : dom
                     )
                 })
+                */
+                var htmlIsFunction = typeof html === "function";
+
+                return this.each( function( i ) {
+                    $( this ).wrapAll( htmlIsFunction ? html.call( this, i ) : html );
+                } );                
             },
 
-            wrapAll: function(wrappingElement) {
+            wrapAll: function(html) {
+                /*
                 if (this[0]) {
                     $(this[0]).before(wrappingElement = $(wrappingElement));
                     var children;
@@ -6463,9 +6653,38 @@ define('skylark-domx-query/query',[
                     $(wrappingElement).append(this);
                 }
                 return this
+                */
+                var wrap;
+
+                if ( this[ 0 ] ) {
+                    if ( typeof html === "function" ) {
+                        html = html.call( this[ 0 ] );
+                    }
+
+                    // The elements to wrap the target around
+                    wrap = $( html, this[ 0 ].ownerDocument ).eq( 0 ).clone( true );
+
+                    if ( this[ 0 ].parentNode ) {
+                        wrap.insertBefore( this[ 0 ] );
+                    }
+
+                    wrap.map( function() {
+                        var elem = this;
+
+                        while ( elem.firstElementChild ) {
+                            elem = elem.firstElementChild;
+                        }
+
+                        return elem;
+                    } ).append( this );
+                }
+
+                return this;
+
             },
 
-            wrapInner: function(wrappingElement) {
+            wrapInner: function(html) {
+                /*
                 var func = isFunction(wrappingElement)
                 return this.each(function(index,node) {
                     var self = $(this),
@@ -6473,9 +6692,29 @@ define('skylark-domx-query/query',[
                         dom = func ? wrappingElement.call(this, index,node) : wrappingElement
                     contents.length ? contents.wrapAll(dom) : self.append(dom)
                 })
+                */
+                if ( typeof html === "function" ) {
+                    return this.each( function( i ) {
+                        $( this ).wrapInner( html.call( this, i ) );
+                    } );
+                }
+
+                return this.each( function() {
+                    var self = $( this ),
+                        contents = self.contents();
+
+                    if ( contents.length ) {
+                        contents.wrapAll( html );
+
+                    } else {
+                        self.append( html );
+                    }
+                } );
+
             },
 
             unwrap: function(selector) {
+                /*
                 if (this.parent().children().length === 0) {
                     // remove dom without text
                     this.parent(selector).not("body").each(function() {
@@ -6487,6 +6726,12 @@ define('skylark-domx-query/query',[
                     });
                 }
                 return this
+                */
+                this.parent(selector).not("body").each( function() {
+                    $(this).replaceWith(this.childNodes);
+                });
+                return this;
+
             },
 
             clone: function() {
@@ -6988,9 +7233,9 @@ define('skylark-domx-data/main',[
 
     $.fn.removeProp = $.wraps.wrapper_every_act(data.removeProp, data);
 
-    $.fn.data = $.wraps.wrapper_name_value(data.data, data, data.data);
+    $.fn.data = $.wraps.wrapper_name_value(data.data, data);
 
-    $.fn.removeData = $.wraps.wrapper_every_act(data.removeData, data);
+    $.fn.removeData = $.wraps.wrapper_every_act(data.removeData);
 
     $.fn.val = $.wraps.wrapper_value(data.val, data, data.val);
 
@@ -7045,99 +7290,101 @@ define('skylark-domx-eventer/eventer',[
         };
     }
 
+
+    var NativeEventCtors = [
+            window["CustomEvent"], // 0 default
+            window["CompositionEvent"], // 1
+            window["DragEvent"], // 2
+            window["Event"], // 3
+            window["FocusEvent"], // 4
+            window["KeyboardEvent"], // 5
+            window["MessageEvent"], // 6
+            window["MouseEvent"], // 7
+            window["MouseScrollEvent"], // 8
+            window["MouseWheelEvent"], // 9
+            window["MutationEvent"], // 10
+            window["ProgressEvent"], // 11
+            window["TextEvent"], // 12
+            window["TouchEvent"], // 13
+            window["UIEvent"], // 14
+            window["WheelEvent"], // 15
+            window["ClipboardEvent"] // 16
+        ],
+        NativeEvents = {
+            "compositionstart": 1, // CompositionEvent
+            "compositionend": 1, // CompositionEvent
+            "compositionupdate": 1, // CompositionEvent
+
+            "beforecopy": 16, // ClipboardEvent
+            "beforecut": 16, // ClipboardEvent
+            "beforepaste": 16, // ClipboardEvent
+            "copy": 16, // ClipboardEvent
+            "cut": 16, // ClipboardEvent
+            "paste": 16, // ClipboardEvent
+
+            "drag": 2, // DragEvent
+            "dragend": 2, // DragEvent
+            "dragenter": 2, // DragEvent
+            "dragexit": 2, // DragEvent
+            "dragleave": 2, // DragEvent
+            "dragover": 2, // DragEvent
+            "dragstart": 2, // DragEvent
+            "drop": 2, // DragEvent
+
+            "abort": 3, // Event
+            "change": 3, // Event
+            "error": 3, // Event
+            "selectionchange": 3, // Event
+            "submit": 3, // Event
+            "reset": 3, // Event
+
+            "focus": 4, // FocusEvent
+            "blur": 4, // FocusEvent
+            "focusin": 4, // FocusEvent
+            "focusout": 4, // FocusEvent
+
+            "keydown": 5, // KeyboardEvent
+            "keypress": 5, // KeyboardEvent
+            "keyup": 5, // KeyboardEvent
+
+            "message": 6, // MessageEvent
+
+            "click": 7, // MouseEvent
+            "contextmenu": 7, // MouseEvent
+            "dblclick": 7, // MouseEvent
+            "mousedown": 7, // MouseEvent
+            "mouseup": 7, // MouseEvent
+            "mousemove": 7, // MouseEvent
+            "mouseover": 7, // MouseEvent
+            "mouseout": 7, // MouseEvent
+            "mouseenter": 7, // MouseEvent
+            "mouseleave": 7, // MouseEvent
+
+
+            "textInput": 12, // TextEvent
+
+            "touchstart": 13, // TouchEvent
+            "touchmove": 13, // TouchEvent
+            "touchend": 13, // TouchEvent
+
+            "load": 14, // UIEvent
+            "resize": 14, // UIEvent
+            "select": 14, // UIEvent
+            "scroll": 14, // UIEvent
+            "unload": 14, // UIEvent,
+
+            "wheel": 15 // WheelEvent
+        };
+
     //create a custom dom event
     var createEvent = (function() {
-        var EventCtors = [
-                window["CustomEvent"], // 0 default
-                window["CompositionEvent"], // 1
-                window["DragEvent"], // 2
-                window["Event"], // 3
-                window["FocusEvent"], // 4
-                window["KeyboardEvent"], // 5
-                window["MessageEvent"], // 6
-                window["MouseEvent"], // 7
-                window["MouseScrollEvent"], // 8
-                window["MouseWheelEvent"], // 9
-                window["MutationEvent"], // 10
-                window["ProgressEvent"], // 11
-                window["TextEvent"], // 12
-                window["TouchEvent"], // 13
-                window["UIEvent"], // 14
-                window["WheelEvent"], // 15
-                window["ClipboardEvent"] // 16
-            ],
-            NativeEvents = {
-                "compositionstart": 1, // CompositionEvent
-                "compositionend": 1, // CompositionEvent
-                "compositionupdate": 1, // CompositionEvent
-
-                "beforecopy": 16, // ClipboardEvent
-                "beforecut": 16, // ClipboardEvent
-                "beforepaste": 16, // ClipboardEvent
-                "copy": 16, // ClipboardEvent
-                "cut": 16, // ClipboardEvent
-                "paste": 16, // ClipboardEvent
-
-                "drag": 2, // DragEvent
-                "dragend": 2, // DragEvent
-                "dragenter": 2, // DragEvent
-                "dragexit": 2, // DragEvent
-                "dragleave": 2, // DragEvent
-                "dragover": 2, // DragEvent
-                "dragstart": 2, // DragEvent
-                "drop": 2, // DragEvent
-
-                "abort": 3, // Event
-                "change": 3, // Event
-                "error": 3, // Event
-                "selectionchange": 3, // Event
-                "submit": 3, // Event
-                "reset": 3, // Event
-
-                "focus": 4, // FocusEvent
-                "blur": 4, // FocusEvent
-                "focusin": 4, // FocusEvent
-                "focusout": 4, // FocusEvent
-
-                "keydown": 5, // KeyboardEvent
-                "keypress": 5, // KeyboardEvent
-                "keyup": 5, // KeyboardEvent
-
-                "message": 6, // MessageEvent
-
-                "click": 7, // MouseEvent
-                "contextmenu": 7, // MouseEvent
-                "dblclick": 7, // MouseEvent
-                "mousedown": 7, // MouseEvent
-                "mouseup": 7, // MouseEvent
-                "mousemove": 7, // MouseEvent
-                "mouseover": 7, // MouseEvent
-                "mouseout": 7, // MouseEvent
-                "mouseenter": 7, // MouseEvent
-                "mouseleave": 7, // MouseEvent
-
-
-                "textInput": 12, // TextEvent
-
-                "touchstart": 13, // TouchEvent
-                "touchmove": 13, // TouchEvent
-                "touchend": 13, // TouchEvent
-
-                "load": 14, // UIEvent
-                "resize": 14, // UIEvent
-                "select": 14, // UIEvent
-                "scroll": 14, // UIEvent
-                "unload": 14, // UIEvent,
-
-                "wheel": 15 // WheelEvent
-            };
 
         function getEventCtor(type) {
             var idx = NativeEvents[type];
             if (!idx) {
                 idx = 0;
             }
-            return EventCtors[idx];
+            return NativeEventCtors[idx];
         }
 
         return function(type, props) {
@@ -7656,6 +7903,8 @@ define('skylark-domx-eventer/eventer',[
     }
 
     langx.mixin(eventer, {
+        NativeEvents : NativeEvents,
+        
         create: createEvent,
 
         keys: keyCodeLookup,
@@ -7680,39 +7929,61 @@ define('skylark-domx-eventer/eventer',[
 
     });
 
+    each(NativeEvents,function(name){
+        eventer[name] = function(elm,selector,data,callback) {
+            if (arguments.length>1) {
+                return this.on(elm,name,selector,data,callback);
+            } else {
+                if (name == "focus") {
+                    if (elm.focus) {
+                        elm.focus();
+                    }
+                } else if (name == "blur") {
+                    if (elm.blur) {
+                        elm.blur();
+                    }
+                } else if (name == "click") {
+                    if (elm.click) {
+                        elm.click();
+                    }
+                } else {
+                    this.trigger(elm,name);
+                }
+
+                return this;
+            }
+        };
+    });
+
     return skylark.attach("domx.eventer",eventer);
 });
 define('skylark-domx-eventer/main',[
+    "skylark-langx/langx",
     "./eventer",
     "skylark-domx-velm",
     "skylark-domx-query"        
-],function(eventer,velm,$){
+],function(langx,eventer,velm,$){
 
-    // from ./eventer
-    velm.delegate([
+    var delegateMethodNames = [
         "off",
         "on",
         "one",
-        "shortcuts",
         "trigger"
-    ], eventer);
+    ];
 
-    // events
-    var events = [ 'keyUp', 'keyDown', 'mouseOver', 'mouseOut', 'click', 'dblClick', 'change' ];
-
-    events.forEach( function ( event ) {
-
-        var method = event;
-
-        velm.VisualElement.prototype[method ] = function ( callback ) {
-
-            this.on( event.toLowerCase(), callback);
-
-            return this;
-        };
-
+    langx.each(eventer.NativeEvents,function(name){
+        delegateMethodNames.push(name);
     });
 
+    // from ./eventer
+    velm.delegate(delegateMethodNames, eventer);
+
+    langx.each(delegateMethodNames,function(i,name){
+        $.fn[name] = $.wraps.wrapper_every_act(eventer[name],eventer);
+    });
+
+
+    /*
     $.fn.on = $.wraps.wrapper_every_act(eventer.on, eventer);
 
     $.fn.off = $.wraps.wrapper_every_act(eventer.off, eventer);
@@ -7722,11 +7993,7 @@ define('skylark-domx-eventer/main',[
     ('focusin focusout focus blur load resize scroll unload click dblclick ' +
         'mousedown mouseup mousemove mouseover mouseout mouseenter mouseleave ' +
         'change select keydown keypress keyup error transitionEnd').split(' ').forEach(function(event) {
-        $.fn[event] = function(data, callback) {
-            return (0 in arguments) ?
-                this.on(event, data, callback) :
-                this.trigger(event)
-        }
+        $.fn[event] = $.wraps.wrapper_every_act(eventer[event],eventer);
     });
 
     $.fn.one = function(event, selector, data, callback) {
@@ -7743,6 +8010,7 @@ define('skylark-domx-eventer/main',[
 
         return this.on(event, selector, data, callback, 1)
     }; 
+    */
 
     $.ready = eventer.ready;
 
@@ -8926,6 +9194,29 @@ define('skylark-data-color/Color',[
 	return Color;
 });
 
+define('skylark-domx-files/files',[
+    "skylark-langx/skylark"
+], function(skylark) {
+
+    function dataURLtoBlob(dataurl) {
+        var arr = dataurl.split(','),
+            mime = arr[0].match(/:(.*?);/)[1],
+            bstr = atob(arr[1]),
+            n = bstr.length,
+            u8arr = new Uint8Array(n);
+        while (n--) {
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new Blob([u8arr], { type: mime });
+    }
+
+
+    var files = function() {
+        return files;
+    };
+
+    return skylark.attach("domx.files", files);
+});
 define('skylark-domx-styler/styler',[
     "skylark-langx/skylark",
     "skylark-langx/langx"
@@ -9264,6 +9555,294 @@ define('skylark-domx-styler/main',[
 	return styler;
 });
 define('skylark-domx-styler', ['skylark-domx-styler/main'], function (main) { return main; });
+
+define('skylark-storages-diskfs/diskfs',[
+    "skylark-langx/skylark"
+], function(skylark) {
+
+    function dataURLtoBlob(dataurl) {
+        var arr = dataurl.split(','),
+            mime = arr[0].match(/:(.*?);/)[1],
+            bstr = atob(arr[1]),
+            n = bstr.length,
+            u8arr = new Uint8Array(n);
+        while (n--) {
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new Blob([u8arr], { type: mime });
+    }
+
+
+    var diskfs = function() {
+        return diskfs;
+    };
+
+    return skylark.attach("storages.diskfs", diskfs);
+});
+ define('skylark-storages-diskfs/webentry',[
+    "skylark-langx/arrays",
+    "skylark-langx/Deferred",
+    "./diskfs"
+],function(arrays,Deferred, diskfs){
+    var concat = Array.prototype.concat;
+    var webentry = (function() {
+        function one(entry, path) {
+            var d = new Deferred(),
+                onError = function(e) {
+                    d.reject(e);
+                };
+
+            path = path || '';
+            if (entry.isFile) {
+                entry.file(function(file) {
+                    file.relativePath = path;
+                    d.resolve(file);
+                }, onError);
+            } else if (entry.isDirectory) {
+                var dirReader = entry.createReader();
+                dirReader.readEntries(function(entries) {
+                    all(
+                        entries,
+                        path + entry.name + '/'
+                    ).then(function(files) {
+                        d.resolve(files);
+                    }).catch(onError);
+                }, onError);
+            } else {
+                // Return an empy list for file system items
+                // other than files or directories:
+                d.resolve([]);
+            }
+            return d.promise;
+        }
+
+        function all(entries, path) {
+            return Deferred.all(
+                arrays.map(entries, function(entry) {
+                    return one(entry, path);
+                })
+            ).then(function() {
+                return concat.apply([], arguments);
+            });
+        }
+
+        return {
+            one: one,
+            all: all
+        };
+    })();
+
+    return diskfs.webentry = webentry;
+});
+  define('skylark-domx-files/dropzone',[
+    "skylark-langx/arrays",
+    "skylark-langx/Deferred",
+    "skylark-domx-styler",
+    "skylark-domx-eventer",
+    "./files",
+    "skylark-storages-diskfs/webentry"
+],function(arrays,Deferred, styler, eventer, files, webentry){  /*
+     * Make the specified element to could accept HTML5 file drag and drop.
+     * @param {HTMLElement} elm
+     * @param {PlainObject} params
+     */
+    function dropzone(elm, params) {
+        params = params || {};
+        var hoverClass = params.hoverClass || "dropzone",
+            droppedCallback = params.dropped;
+
+        var enterdCount = 0;
+        eventer.on(elm, "dragenter", function(e) {
+            if (e.dataTransfer && e.dataTransfer.types.indexOf("Files") > -1) {
+                eventer.stop(e);
+                enterdCount++;
+                styler.addClass(elm, hoverClass)
+            }
+        });
+
+        eventer.on(elm, "dragover", function(e) {
+            if (e.dataTransfer && e.dataTransfer.types.indexOf("Files") > -1) {
+                eventer.stop(e);
+            }
+        });
+
+        eventer.on(elm, "dragleave", function(e) {
+            if (e.dataTransfer && e.dataTransfer.types.indexOf("Files") > -1) {
+                enterdCount--
+                if (enterdCount == 0) {
+                    styler.removeClass(elm, hoverClass);
+                }
+            }
+        });
+
+        eventer.on(elm, "drop", function(e) {
+            if (e.dataTransfer && e.dataTransfer.types.indexOf("Files") > -1) {
+                styler.removeClass(elm, hoverClass)
+                eventer.stop(e);
+                if (droppedCallback) {
+                    var items = e.dataTransfer.items;
+                    if (items && items.length && (items[0].webkitGetAsEntry ||
+                            items[0].getAsEntry)) {
+                        webentry.all(
+                            arrays.map(items, function(item) {
+                                if (item.webkitGetAsEntry) {
+                                    return item.webkitGetAsEntry();
+                                }
+                                return item.getAsEntry();
+                            })
+                        ).then(droppedCallback);
+                    } else {
+                        droppedCallback(e.dataTransfer.files);
+                    }
+                }
+            }
+        });
+
+        return this;
+    }
+
+     return files.dropzone = dropzone;
+});
+define('skylark-domx-files/pastezone',[
+    "skylark-langx/objects",
+    "skylark-domx-eventer",
+    "./files"
+],function(objects, eventer, files){
+    function pastezone(elm, params) {
+        params = params || {};
+        var hoverClass = params.hoverClass || "pastezone",
+            pastedCallback = params.pasted;
+
+        eventer.on(elm, "paste", function(e) {
+            var items = e.originalEvent && e.originalEvent.clipboardData &&
+                e.originalEvent.clipboardData.items,
+                files = [];
+            if (items && items.length) {
+                objects.each(items, function(index, item) {
+                    var file = item.getAsFile && item.getAsFile();
+                    if (file) {
+                        files.push(file);
+                    }
+                });
+            }
+            if (pastedCallback && files.length) {
+                pastedCallback(files);
+            }
+        });
+
+        return this;
+    }
+
+    return files.pastezone = pastezone;
+
+});
+
+define('skylark-storages-diskfs/select',[
+    "./diskfs"
+],function(diskfs){
+    var fileInput,
+        fileInputForm,
+        fileSelected,
+        maxFileSize = 1 / 0;
+
+    function select(params) {
+        params = params || {};
+        var directory = params.directory || false,
+            multiple = params.multiple || false,
+            accept = params.accept || "", //'image/gif,image/jpeg,image/jpg,image/png,image/svg'
+            title = params.title || "",
+            fileSelected = params.picked;
+        if (!fileInput) {
+            var input = fileInput = document.createElement("input");
+
+            function selectFiles(pickedFiles) {
+                for (var i = pickedFiles.length; i--;) {
+                    if (pickedFiles[i].size > maxFileSize) {
+                        pickedFiles.splice(i, 1);
+                    }
+                }
+                fileSelected(pickedFiles);
+            }
+
+            input.type = "file";
+            input.style.position = "fixed";
+            input.style.left = 0;
+            input.style.top = 0;
+            input.style.opacity = .001;
+            document.body.appendChild(input);
+
+            input.onchange = function(e) {
+                var entries = e.target.webkitEntries || e.target.entries;
+
+                if (entries && entries.length) {
+                    webentry.all(entries).then(function(files) {
+                        selectFiles(files);
+                    });
+                } else {
+                    selectFiles(Array.prototype.slice.call(e.target.files));
+                }
+                // reset to "", so selecting the same file next time still trigger the change handler
+                input.value = "";
+            };
+        }
+        fileInput.multiple = multiple;
+        fileInput.accept = accept;
+        fileInput.title = title;
+
+        fileInput.webkitdirectory = directory;
+        fileInput.click();
+    }
+
+    return diskfs.select = select;
+});
+
+
+define('skylark-domx-files/picker',[
+    "skylark-langx/objects",
+    "skylark-domx-eventer",
+    "./files",
+    "skylark-storages-diskfs/select"
+],function(objects, eventer, files, select){
+    /*
+     * Make the specified element to pop-up the file selection dialog box when clicked , and read the contents the files selected from client file system by user.
+     * @param {HTMLElement} elm
+     * @param {PlainObject} params
+     */
+    function picker(elm, params) {
+        eventer.on(elm, "click", function(e) {
+            e.preventDefault();
+            select(params);
+        });
+        return this;
+    }
+
+    return files.picker = picker;
+
+});
+
+
+
+define('skylark-domx-files/main',[
+	"./files",
+	"skylark-domx-velm",
+	"skylark-domx-query",
+	"./dropzone",
+	"./pastezone",
+	"./picker"
+],function(files,velm,$){
+	velm.delegate([
+		"dropzone",
+		"pastezone",
+		"picker"
+	],files);
+
+    $.fn.pastezone = $.wraps.wrapper_every_act(files.pastezone, files);
+    $.fn.dropzone = $.wraps.wrapper_every_act(files.dropzone, files);
+    $.fn.picker = $.wraps.wrapper_every_act(files.picker, files);
+
+	return files;
+});
+define('skylark-domx-files', ['skylark-domx-files/main'], function (main) { return main; });
 
 define('skylark-domx-geom/geom',[
     "skylark-langx/skylark",
@@ -10328,10 +10907,11 @@ define('skylark-domx-geom/geom',[
     return skylark.attach("domx.geom", geom);
 });
 define('skylark-domx-geom/main',[
+    "skylark-langx/langx",
     "./geom",
     "skylark-domx-velm",
     "skylark-domx-query"        
-],function(geom,velm,$){
+],function(langx,geom,velm,$){
    // from ./geom
     velm.delegate([
         "borderExtents",
@@ -10363,7 +10943,9 @@ define('skylark-domx-geom/main',[
     $.fn.scrollLeft = $.wraps.wrapper_value(geom.scrollLeft, geom);
 
     $.fn.position =  function(options) {
-        if (!this.length) return
+        if (!this.length) {
+            return this;
+        }
 
         if (options) {
             if (options.of && options.of.length) {
@@ -10449,71 +11031,6 @@ define('skylark-domx-geom/main',[
     return geom;
 });
 define('skylark-domx-geom', ['skylark-domx-geom/main'], function (main) { return main; });
-
-define('skylark-widgets-swt/swt',[
-  "skylark-langx/skylark",
-  "skylark-langx/langx",
-  "skylark-domx-browser",
-  "skylark-domx-eventer",
-  "skylark-domx-noder",
-  "skylark-domx-geom",
-  "skylark-domx-query"
-],function(skylark,langx,browser,eventer,noder,geom,$){
-	var ui = skylark.ui = skylark.ui || {};
-		sbswt = ui.sbswt = {};
-
-	var CONST = {
-		BACKSPACE_KEYCODE: 8,
-		COMMA_KEYCODE: 188, // `,` & `<`
-		DELETE_KEYCODE: 46,
-		DOWN_ARROW_KEYCODE: 40,
-		ENTER_KEYCODE: 13,
-		TAB_KEYCODE: 9,
-		UP_ARROW_KEYCODE: 38
-	};
-
-	var isShiftHeld = function isShiftHeld (e) { return e.shiftKey === true; };
-
-	var isKey = function isKey (keyCode) {
-		return function compareKeycodes (e) {
-			return e.keyCode === keyCode;
-		};
-	};
-
-	var isBackspaceKey = isKey(CONST.BACKSPACE_KEYCODE);
-	var isDeleteKey = isKey(CONST.DELETE_KEYCODE);
-	var isTabKey = isKey(CONST.TAB_KEYCODE);
-	var isUpArrow = isKey(CONST.UP_ARROW_KEYCODE);
-	var isDownArrow = isKey(CONST.DOWN_ARROW_KEYCODE);
-
-	var ENCODED_REGEX = /&[^\s]*;/;
-	/*
-	 * to prevent double encoding decodes content in loop until content is encoding free
-	 */
-	var cleanInput = function cleanInput (questionableMarkup) {
-		// check for encoding and decode
-		while (ENCODED_REGEX.test(questionableMarkup)) {
-			questionableMarkup = $('<i>').html(questionableMarkup).text();
-		}
-
-		// string completely decoded now encode it
-		return $('<i>').text(questionableMarkup).html();
-	};
-
-	langx.mixin(ui, {
-		CONST: CONST,
-		cleanInput: cleanInput,
-		isBackspaceKey: isBackspaceKey,
-		isDeleteKey: isDeleteKey,
-		isShiftHeld: isShiftHeld,
-		isTabKey: isTabKey,
-		isUpArrow: isUpArrow,
-		isDownArrow: isDownArrow
-	});
-
-	return ui;
-
-});
 
 define('skylark-domx-fx/fx',[
     "skylark-langx/skylark",
@@ -11244,50 +11761,6 @@ define('skylark-domx-plugins/plugins',[
         return pluginInstance;
     }
 
-    function shortcutter(pluginName,extfn) {
-       /*
-        * Create or get or destory a plugin instance assocated with the element,
-        * and also you can execute the plugin method directory;
-        */
-        return function (elm,options) {
-            var  plugin = instantiate(elm, pluginName,"instance");
-            if ( options === "instance" ) {
-              return plugin || null;
-            }
-            if (!plugin) {
-                plugin = instantiate(elm, pluginName,typeof options == 'object' && options || {});
-                return this;
-            } else  if (options) {
-                var args = slice.call(arguments,1); //2
-                if (extfn) {
-                    var ret =  extfn.apply(plugin,args);
-                    if (ret === undefined) {
-                        ret = this;
-                    }
-                    return ret;
-                } else {
-                    if (typeof options == 'string') {
-                        var methodName = options;
-
-                        if ( !plugin ) {
-                            throw new Error( "cannot call methods on " + pluginName +
-                                " prior to initialization; " +
-                                "attempted to call method '" + methodName + "'" );
-                        }
-
-                        if ( !langx.isFunction( plugin[ methodName ] ) || methodName.charAt( 0 ) === "_" ) {
-                            throw new Error( "no such method '" + methodName + "' for " + pluginName +
-                                " plugin instance" );
-                        }
-
-                        return plugin[methodName].apply(plugin,args);
-                    }                
-                }                
-            }
-
-        }
-
-    }
 
     function shortcutter(pluginName,extfn) {
        /*
@@ -11299,9 +11772,14 @@ define('skylark-domx-plugins/plugins',[
             if ( options === "instance" ) {
               return plugin || null;
             }
+
             if (!plugin) {
                 plugin = instantiate(elm, pluginName,typeof options == 'object' && options || {});
-            } else  if (options) {
+                if (typeof options != "string") {
+                  return this;
+                }
+            } 
+            if (options) {
                 var args = slice.call(arguments,1); //2
                 if (extfn) {
                     return extfn.apply(plugin,args);
@@ -11320,7 +11798,12 @@ define('skylark-domx-plugins/plugins',[
                                 " plugin instance" );
                         }
 
-                        return plugin[methodName].apply(plugin,args);
+                        var ret = plugin[methodName].apply(plugin,args);
+                        if (ret == plugin) {
+                          ret = undefined;
+                        }
+
+                        return ret;
                     }                
                 }                
             }
@@ -11358,10 +11841,9 @@ define('skylark-domx-plugins/plugins',[
                   this.each(function () {
                     var args2 = slice.call(args);
                     args2.unshift(this);
-                    var  ret  = shortcut.apply(null,args2);
+                    var  ret  = shortcut.apply(undefined,args2);
                     if (ret !== undefined) {
                         returnValue = ret;
-                        return false;
                     }
                   });
                 }
@@ -11500,6 +11982,13 @@ define('skylark-domx-plugins/plugins',[
             this.options[ key ] = value;
 
             return this;
+        },
+
+        getUID : function (prefix) {
+            prefix = prefix || "plugin";
+            do prefix += ~~(Math.random() * 1000000)
+            while (document.getElementById(prefix))
+            return prefix;
         },
 
         elm : function() {
@@ -11884,6 +12373,7 @@ define('skylark-widgets-base/Widget',[
   "skylark-domx-data",
   "skylark-domx-eventer",
   "skylark-domx-noder",
+  "skylark-domx-files",
   "skylark-domx-geom",
   "skylark-domx-velm",
   "skylark-domx-query",
@@ -11891,7 +12381,7 @@ define('skylark-widgets-base/Widget',[
   "skylark-domx-plugins",
   "skylark-data-collection/HashMap",
   "./base"
-],function(skylark,langx,browser,datax,eventer,noder,geom,elmx,$,fx,plugins,HashMap,base){
+],function(skylark,langx,browser,datax,eventer,noder,files,geom,elmx,$,fx, plugins,HashMap,base){
 
 /*---------------------------------------------------------------------------------*/
 
@@ -11941,10 +12431,12 @@ define('skylark-widgets-base/Widget',[
 
               }
           }
-
-
         }
 
+        if (this._elm.parentElement) {
+          // The widget is already in document
+          this._startup();
+        }
 
      },
 
@@ -11957,7 +12449,8 @@ define('skylark-widgets-base/Widget',[
     _parse : function(elm,options) {
       var optionsAttr = datax.data(elm,"options");
       if (optionsAttr) {
-         var options1 = JSON.parse("{" + optionsAttr + "}");
+         //var options1 = JSON.parse("{" + optionsAttr + "}");
+         var options1 = eval("({" + optionsAttr + "})");
          options = langx.mixin(options1,options); 
       }
       return options || {};
@@ -12225,6 +12718,12 @@ define('skylark-widgets-base/Widget',[
       return fx.throb(this._elm,params);
     },
 
+    emit : function(type,params) {
+      var e = langx.Emitter.createEvent(type,{
+        data : params
+      });
+      return langx.Emitter.prototype.emit.call(this,e,params);
+    },
 
     /**
      *  Attach the current widget element to dom document.
@@ -12309,12 +12808,6 @@ define('skylark-widgets-base/Widget',[
   return base.Widget = Widget;
 });
 
-define('skylark-widgets-swt/Widget',[
-  "skylark-widgets-base/Widget"
-],function(Widget){
-  return Widget;
-});
-
 define('skylark-widgets-colorpicker/ColorPicker',[
    "skylark-langx/skylark",
     "skylark-langx/langx",
@@ -12325,17 +12818,11 @@ define('skylark-widgets-colorpicker/ColorPicker',[
     "skylark-domx-query",
     "skylark-data-color/colors",
     "skylark-data-color/Color",
-    "skylark-widgets-swt/swt",
-    "skylark-widgets-swt/Widget"
-],function(skylark, langx, browser, noder, eventer,finder, $, colors, Color, swt, Widget) {
+    "skylark-widgets-base/Widget"
+],function(skylark, langx, browser, noder, eventer,finder, $, colors, Color,  Widget) {
     "use strict";
 
     var noop = langx.noop;
-    // Spectrum Colorpicker v1.8.0
-    // https://github.com/bgrins/spectrum
-    // Author: Brian Grinstead
-    // License: MIT
-
 
     var defaultOpts = {
 
@@ -12386,6 +12873,7 @@ define('skylark-widgets-colorpicker/ColorPicker',[
             "<div class='sp-dd'>&#9660;</div>",
         "</div>"
     ].join(''),
+    
     markup = (function () {
 
         // IE7-10 does not support gradients with multiple stops, so we need to simulate
@@ -12483,812 +12971,811 @@ define('skylark-widgets-colorpicker/ColorPicker',[
         return opts;
     }
 
-    function init(element, o) {
 
-        var opts = instanceOptions(o, element),
-            flat = opts.flat,
-            showSelectionPalette = opts.showSelectionPalette,
-            localStorageKey = opts.localStorageKey,
-            theme = opts.theme,
-            callbacks = opts.callbacks,
-            resize = langx.debounce(reflow, 10),
-            visible = false,
-            isDragging = false,
-            dragWidth = 0,
-            dragHeight = 0,
-            dragHelperHeight = 0,
-            slideHeight = 0,
-            slideWidth = 0,
-            alphaWidth = 0,
-            alphaSlideHelperWidth = 0,
-            slideHelperHeight = 0,
-            currentHue = 0,
-            currentSaturation = 0,
-            currentValue = 0,
-            currentAlpha = 1,
-            palette = [],
-            paletteArray = [],
-            paletteLookup = {},
-            selectionPalette = opts.selectionPalette.slice(0),
-            maxSelectionSize = opts.maxSelectionSize,
-            draggingClass = "sp-dragging",
-            shiftMovementDirection = null;
-
-        var doc = element.ownerDocument,
-            body = doc.body,
-            boundElement = $(element),
-            disabled = false,
-            container = $(markup, doc).addClass(theme),
-            pickerContainer = container.find(".sp-picker-container"),
-            dragger = container.find(".sp-color"),
-            dragHelper = container.find(".sp-dragger"),
-            slider = container.find(".sp-hue"),
-            slideHelper = container.find(".sp-slider"),
-            alphaSliderInner = container.find(".sp-alpha-inner"),
-            alphaSlider = container.find(".sp-alpha"),
-            alphaSlideHelper = container.find(".sp-alpha-handle"),
-            textInput = container.find(".sp-input"),
-            paletteContainer = container.find(".sp-palette"),
-            initialColorContainer = container.find(".sp-initial"),
-            cancelButton = container.find(".sp-cancel"),
-            clearButton = container.find(".sp-clear"),
-            chooseButton = container.find(".sp-choose"),
-            toggleButton = container.find(".sp-palette-toggle"),
-            isInput = boundElement.is("input"),
-            isInputTypeColor = isInput && boundElement.attr("type") === "color" && inputTypeColorSupport(),
-            shouldReplace = isInput && !flat,
-            replacer = (shouldReplace) ? $(replaceInput).addClass(theme).addClass(opts.className).addClass(opts.replacerClassName) : $([]),
-            offsetElement = (shouldReplace) ? replacer : boundElement,
-            previewElement = replacer.find(".sp-preview-inner"),
-            initialColor = opts.color || (isInput && boundElement.val()),
-            colorOnShow = false,
-            currentPreferredFormat = opts.preferredFormat,
-            clickoutFiresChange = !opts.showButtons || opts.clickoutFiresChange,
-            isEmpty = !initialColor,
-            allowEmpty = opts.allowEmpty && !isInputTypeColor;
-
-        function applyOptions() {
-
-            if (opts.showPaletteOnly) {
-                opts.showPalette = true;
-            }
-
-            toggleButton.text(opts.showPaletteOnly ? opts.togglePaletteMoreText : opts.togglePaletteLessText);
-
-            if (opts.palette) {
-                palette = opts.palette.slice(0);
-                paletteArray = langx.isArray(palette[0]) ? palette : [palette];
-                paletteLookup = {};
-                for (var i = 0; i < paletteArray.length; i++) {
-                    for (var j = 0; j < paletteArray[i].length; j++) {
-                        var rgb = Color(paletteArray[i][j]).toRgbString();
-                        paletteLookup[rgb] = true;
-                    }
-                }
-            }
-
-            container.toggleClass("sp-flat", flat);
-            container.toggleClass("sp-input-disabled", !opts.showInput);
-            container.toggleClass("sp-alpha-enabled", opts.showAlpha);
-            container.toggleClass("sp-clear-enabled", allowEmpty);
-            container.toggleClass("sp-buttons-disabled", !opts.showButtons);
-            container.toggleClass("sp-palette-buttons-disabled", !opts.togglePaletteOnly);
-            container.toggleClass("sp-palette-disabled", !opts.showPalette);
-            container.toggleClass("sp-palette-only", opts.showPaletteOnly);
-            container.toggleClass("sp-initial-disabled", !opts.showInitial);
-            container.addClass(opts.className).addClass(opts.containerClassName);
-
-            reflow();
-        }
-
-        function initialize() {
-
-            if (browser.isIE) {
-                container.find("*:not(input)").attr("unselectable", "on");
-            }
-
-            applyOptions();
-
-            if (shouldReplace) {
-                boundElement.after(replacer).hide();
-            }
-
-            if (!allowEmpty) {
-                clearButton.hide();
-            }
-
-            if (flat) {
-                boundElement.after(container).hide();
-            }
-            else {
-
-                var appendTo = opts.appendTo === "parent" ? boundElement.parent() : $(opts.appendTo);
-                if (appendTo.length !== 1) {
-                    appendTo = $("body");
-                }
-
-                appendTo.append(container);
-            }
-
-            updateSelectionPaletteFromStorage();
-
-            offsetElement.on("click.ColorPicker touchstart.ColorPicker", function (e) {
-                if (!disabled) {
-                    toggle();
-                }
-
-                e.stopPropagation();
-
-                if (!$(e.target).is("input")) {
-                    e.preventDefault();
-                }
-            });
-
-            if(boundElement.is(":disabled") || (opts.disabled === true)) {
-                disable();
-            }
-
-            // Prevent clicks from bubbling up to document.  This would cause it to be hidden.
-            container.click(stopPropagation);
-
-            // Handle user typed input
-            textInput.change(setFromTextInput);
-            textInput.on("paste", function () {
-                setTimeout(setFromTextInput, 1);
-            });
-            textInput.keydown(function (e) { if (e.keyCode == 13) { setFromTextInput(); } });
-
-            cancelButton.text(opts.cancelText);
-            cancelButton.on("click.ColorPicker", function (e) {
-                e.stopPropagation();
-                e.preventDefault();
-                revert();
-                hide();
-            });
-
-            clearButton.attr("title", opts.clearText);
-            clearButton.on("click.ColorPicker", function (e) {
-                e.stopPropagation();
-                e.preventDefault();
-                isEmpty = true;
-                move();
-
-                if(flat) {
-                    //for the flat style, this is a change event
-                    updateOriginalInput(true);
-                }
-            });
-
-            chooseButton.text(opts.chooseText);
-            chooseButton.on("click.ColorPicker", function (e) {
-                e.stopPropagation();
-                e.preventDefault();
-
-                if (browser.isIE && textInput.is(":focus")) {
-                    textInput.trigger('change');
-                }
-
-                if (isValid()) {
-                    updateOriginalInput(true);
-                    hide();
-                }
-            });
-
-            toggleButton.text(opts.showPaletteOnly ? opts.togglePaletteMoreText : opts.togglePaletteLessText);
-            toggleButton.on("click.spectrum", function (e) {
-                e.stopPropagation();
-                e.preventDefault();
-
-                opts.showPaletteOnly = !opts.showPaletteOnly;
-
-                // To make sure the Picker area is drawn on the right, next to the
-                // Palette area (and not below the palette), first move the Palette
-                // to the left to make space for the picker, plus 5px extra.
-                // The 'applyOptions' function puts the whole container back into place
-                // and takes care of the button-text and the sp-palette-only CSS class.
-                if (!opts.showPaletteOnly && !flat) {
-                    container.css('left', '-=' + (pickerContainer.outerWidth(true) + 5));
-                }
-                applyOptions();
-            });
-
-            draggable(alphaSlider, function (dragX, dragY, e) {
-                currentAlpha = (dragX / alphaWidth);
-                isEmpty = false;
-                if (e.shiftKey) {
-                    currentAlpha = Math.round(currentAlpha * 10) / 10;
-                }
-
-                move();
-            }, dragStart, dragStop);
-
-            draggable(slider, function (dragX, dragY) {
-                currentHue = parseFloat(dragY / slideHeight);
-                isEmpty = false;
-                if (!opts.showAlpha) {
-                    currentAlpha = 1;
-                }
-                move();
-            }, dragStart, dragStop);
-
-            draggable(dragger, function (dragX, dragY, e) {
-
-                // shift+drag should snap the movement to either the x or y axis.
-                if (!e.shiftKey) {
-                    shiftMovementDirection = null;
-                }
-                else if (!shiftMovementDirection) {
-                    var oldDragX = currentSaturation * dragWidth;
-                    var oldDragY = dragHeight - (currentValue * dragHeight);
-                    var furtherFromX = Math.abs(dragX - oldDragX) > Math.abs(dragY - oldDragY);
-
-                    shiftMovementDirection = furtherFromX ? "x" : "y";
-                }
-
-                var setSaturation = !shiftMovementDirection || shiftMovementDirection === "x";
-                var setValue = !shiftMovementDirection || shiftMovementDirection === "y";
-
-                if (setSaturation) {
-                    currentSaturation = parseFloat(dragX / dragWidth);
-                }
-                if (setValue) {
-                    currentValue = parseFloat((dragHeight - dragY) / dragHeight);
-                }
-
-                isEmpty = false;
-                if (!opts.showAlpha) {
-                    currentAlpha = 1;
-                }
-
-                move();
-
-            }, dragStart, dragStop);
-
-            if (!!initialColor) {
-                set(initialColor);
-
-                // In case color was black - update the preview UI and set the format
-                // since the set function will not run (default color is black).
-                updateUI();
-                currentPreferredFormat = opts.preferredFormat || Color(initialColor).format;
-
-                addColorToSelectionPalette(initialColor);
-            }
-            else {
-                updateUI();
-            }
-
-            if (flat) {
-                show();
-            }
-
-            function paletteElementClick(e) {
-                if (e.data && e.data.ignore) {
-                    set($(e.target).closest(".sp-thumb-el").data("color"));
-                    move();
-                }
-                else {
-                    set($(e.target).closest(".sp-thumb-el").data("color"));
-                    move();
-
-                    // If the picker is going to close immediately, a palette selection
-                    // is a change.  Otherwise, it's a move only.
-                    if (opts.hideAfterPaletteSelect) {
-                        updateOriginalInput(true);
-                        hide();
-                    } else {
-                        updateOriginalInput();
-                    }
-                }
-
-                return false;
-            }
-
-            var paletteEvent = browser.isIE ? "mousedown.ColorPicker" : "click.ColorPicker touchstart.ColorPicker";
-            paletteContainer.on(paletteEvent, ".sp-thumb-el", paletteElementClick);
-            initialColorContainer.on(paletteEvent, ".sp-thumb-el:nth-child(1)", { ignore: true }, paletteElementClick);
-        }
-
-        function updateSelectionPaletteFromStorage() {
-
-            if (localStorageKey && window.localStorage) {
-
-                // Migrate old palettes over to new format.  May want to remove this eventually.
-                try {
-                    var oldPalette = window.localStorage[localStorageKey].split(",#");
-                    if (oldPalette.length > 1) {
-                        delete window.localStorage[localStorageKey];
-                        langx.each(oldPalette, function(i, c) {
-                             addColorToSelectionPalette(c);
-                        });
-                    }
-                }
-                catch(e) { }
-
-                try {
-                    selectionPalette = window.localStorage[localStorageKey].split(";");
-                }
-                catch (e) { }
-            }
-        }
-
-        function addColorToSelectionPalette(color) {
-            if (showSelectionPalette) {
-                var rgb = Color(color).toRgbString();
-                if (!paletteLookup[rgb] && langx.inArray(rgb, selectionPalette) === -1) {
-                    selectionPalette.push(rgb);
-                    while(selectionPalette.length > maxSelectionSize) {
-                        selectionPalette.shift();
-                    }
-                }
-
-                if (localStorageKey && window.localStorage) {
-                    try {
-                        window.localStorage[localStorageKey] = selectionPalette.join(";");
-                    }
-                    catch(e) { }
-                }
-            }
-        }
-
-        function getUniqueSelectionPalette() {
-            var unique = [];
-            if (opts.showPalette) {
-                for (var i = 0; i < selectionPalette.length; i++) {
-                    var rgb = Color(selectionPalette[i]).toRgbString();
-
-                    if (!paletteLookup[rgb]) {
-                        unique.push(selectionPalette[i]);
-                    }
-                }
-            }
-
-            return unique.reverse().slice(0, opts.maxSelectionSize);
-        }
-
-        function drawPalette() {
-
-            var currentColor = get();
-
-            var html = langx.map(paletteArray, function (palette, i) {
-                return paletteTemplate(palette, currentColor, "sp-palette-row sp-palette-row-" + i, opts);
-            });
-
-            updateSelectionPaletteFromStorage();
-
-            if (selectionPalette) {
-                html.push(paletteTemplate(getUniqueSelectionPalette(), currentColor, "sp-palette-row sp-palette-row-selection", opts));
-            }
-
-            paletteContainer.html(html.join(""));
-        }
-
-        function drawInitial() {
-            if (opts.showInitial) {
-                var initial = colorOnShow;
-                var current = get();
-                initialColorContainer.html(paletteTemplate([initial, current], current, "sp-palette-row-initial", opts));
-            }
-        }
-
-        function dragStart() {
-            if (dragHeight <= 0 || dragWidth <= 0 || slideHeight <= 0) {
-                reflow();
-            }
-            isDragging = true;
-            container.addClass(draggingClass);
-            shiftMovementDirection = null;
-            boundElement.trigger('dragstart.ColorPicker', [ get() ]);
-        }
-
-        function dragStop() {
-            isDragging = false;
-            container.removeClass(draggingClass);
-            boundElement.trigger('dragstop.ColorPicker', [ get() ]);
-        }
-
-        function setFromTextInput() {
-
-            var value = textInput.val();
-
-            if ((value === null || value === "") && allowEmpty) {
-                set(null);
-                move();
-                updateOriginalInput();
-            }
-            else {
-                var tiny = Color(value);
-                if (tiny.isValid()) {
-                    set(tiny);
-                    move();
-                    updateOriginalInput();
-                }
-                else {
-                    textInput.addClass("sp-validation-error");
-                }
-            }
-        }
-
-        function toggle() {
-            if (visible) {
-                hide();
-            }
-            else {
-                show();
-            }
-        }
-
-        function show() {
-            var event = eventer.create('beforeShow.ColorPicker');
-
-            if (visible) {
-                reflow();
-                return;
-            }
-
-            boundElement.trigger(event, [ get() ]);
-
-            if (callbacks.beforeShow(get()) === false || event.isDefaultPrevented()) {
-                return;
-            }
-
-            hideAll();
-            visible = true;
-
-            $(doc).on("keydown.ColorPicker", onkeydown);
-            $(doc).on("click.ColorPicker", clickout);
-            $(window).on("resize.ColorPicker", resize);
-            replacer.addClass("sp-active");
-            container.removeClass("sp-hidden");
-
-            reflow();
-            updateUI();
-
-            colorOnShow = get();
-
-            drawInitial();
-            callbacks.show(colorOnShow);
-            boundElement.trigger('show.ColorPicker', [ colorOnShow ]);
-        }
-
-        function onkeydown(e) {
-            // Close on ESC
-            if (e.keyCode === 27) {
-                hide();
-            }
-        }
-
-        function clickout(e) {
-            // Return on right click.
-            if (e.button == 2) { return; }
-
-            // If a drag event was happening during the mouseup, don't hide
-            // on click.
-            if (isDragging) { return; }
-
-            if (clickoutFiresChange) {
-                updateOriginalInput(true);
-            }
-            else {
-                revert();
-            }
-            hide();
-        }
-
-        function hide() {
-            // Return if hiding is unnecessary
-            if (!visible || flat) { return; }
-            visible = false;
-
-            $(doc).off("keydown.ColorPicker", onkeydown);
-            $(doc).off("click.ColorPicker", clickout);
-            $(window).off("resize.ColorPicker", resize);
-
-            replacer.removeClass("sp-active");
-            container.addClass("sp-hidden");
-
-            callbacks.hide(get());
-            boundElement.trigger('hide.ColorPicker', [ get() ]);
-        }
-
-        function revert() {
-            set(colorOnShow, true);
-            updateOriginalInput(true);
-        }
-
-        function set(color, ignoreFormatChange) {
-            if (Color.equals(color, get())) {
-                // Update UI just in case a validation error needs
-                // to be cleared.
-                updateUI();
-                return;
-            }
-
-            var newColor, newHsv;
-            if (!color && allowEmpty) {
-                isEmpty = true;
-            } else {
-                isEmpty = false;
-                newColor = colors.Color(color);
-                newHsv = newColor.toHsv();
-
-                currentHue = (newHsv.h % 360) / 360;
-                currentSaturation = newHsv.s;
-                currentValue = newHsv.v;
-                currentAlpha = newHsv.a;
-            }
-            updateUI();
-
-            if (newColor && newColor.isValid() && !ignoreFormatChange) {
-                currentPreferredFormat = opts.preferredFormat || newColor.getFormat();
-            }
-        }
-
-        function get(opts) {
-            opts = opts || { };
-
-            if (allowEmpty && isEmpty) {
-                return null;
-            }
-
-            return Color.fromRatio({
-                h: currentHue,
-                s: currentSaturation,
-                v: currentValue,
-                a: Math.round(currentAlpha * 1000) / 1000
-            }, { format: opts.format || currentPreferredFormat });
-        }
-
-        function isValid() {
-            return !textInput.hasClass("sp-validation-error");
-        }
-
-        function move() {
-            updateUI();
-
-            callbacks.move(get());
-            boundElement.trigger('move.ColorPicker', [ get() ]);
-        }
-
-        function updateUI() {
-
-            textInput.removeClass("sp-validation-error");
-
-            updateHelperLocations();
-
-            // Update dragger background color (gradients take care of saturation and value).
-            var flatColor = Color.fromRatio({ h: currentHue, s: 1, v: 1 });
-            dragger.css("background-color", flatColor.toHexString());
-
-            // Get a format that alpha will be included in (hex and names ignore alpha)
-            var format = currentPreferredFormat;
-            if (currentAlpha < 1 && !(currentAlpha === 0 && format === "name")) {
-                if (format === "hex" || format === "hex3" || format === "hex6" || format === "name") {
-                    format = "rgb";
-                }
-            }
-
-            var realColor = get({ format: format }),
-                displayColor = '';
-
-             //reset background info for preview element
-            previewElement.removeClass("sp-clear-display");
-            previewElement.css('background-color', 'transparent');
-
-            if (!realColor && allowEmpty) {
-                // Update the replaced elements background with icon indicating no color selection
-                previewElement.addClass("sp-clear-display");
-            }
-            else {
-                var realHex = realColor.toHexString(),
-                    realRgb = realColor.toRgbString();
-
-                // Update the replaced elements background color (with actual selected color)
-                previewElement.css("background-color", realRgb);
-
-                if (opts.showAlpha) {
-                    var rgb = realColor.toRgb();
-                    rgb.a = 0;
-                    var realAlpha = Color(rgb).toRgbString();
-                    var gradient = "linear-gradient(left, " + realAlpha + ", " + realHex + ")";
-
-                    if (browser.isIE) {
-                        alphaSliderInner.css("filter", Color(realAlpha).toFilter({ gradientType: 1 }, realHex));
-                    }
-                    else {
-                        alphaSliderInner.css("background", "-webkit-" + gradient);
-                        alphaSliderInner.css("background", "-moz-" + gradient);
-                        alphaSliderInner.css("background", "-ms-" + gradient);
-                        // Use current syntax gradient on unprefixed property.
-                        alphaSliderInner.css("background",
-                            "linear-gradient(to right, " + realAlpha + ", " + realHex + ")");
-                    }
-                }
-
-                displayColor = realColor.toString(format);
-            }
-
-            // Update the text entry input as it changes happen
-            if (opts.showInput) {
-                textInput.val(displayColor);
-            }
-
-            if (opts.showPalette) {
-                drawPalette();
-            }
-
-            drawInitial();
-        }
-
-        function updateHelperLocations() {
-            var s = currentSaturation;
-            var v = currentValue;
-
-            if(allowEmpty && isEmpty) {
-                //if selected color is empty, hide the helpers
-                alphaSlideHelper.hide();
-                slideHelper.hide();
-                dragHelper.hide();
-            }
-            else {
-                //make sure helpers are visible
-                alphaSlideHelper.show();
-                slideHelper.show();
-                dragHelper.show();
-
-                // Where to show the little circle in that displays your current selected color
-                var dragX = s * dragWidth;
-                var dragY = dragHeight - (v * dragHeight);
-                dragX = Math.max(
-                    -dragHelperHeight,
-                    Math.min(dragWidth - dragHelperHeight, dragX - dragHelperHeight)
-                );
-                dragY = Math.max(
-                    -dragHelperHeight,
-                    Math.min(dragHeight - dragHelperHeight, dragY - dragHelperHeight)
-                );
-                dragHelper.css({
-                    "top": dragY + "px",
-                    "left": dragX + "px"
-                });
-
-                var alphaX = currentAlpha * alphaWidth;
-                alphaSlideHelper.css({
-                    "left": (alphaX - (alphaSlideHelperWidth / 2)) + "px"
-                });
-
-                // Where to show the bar that displays your current selected hue
-                var slideY = (currentHue) * slideHeight;
-                slideHelper.css({
-                    "top": (slideY - slideHelperHeight) + "px"
-                });
-            }
-        }
-
-        function updateOriginalInput(fireCallback) {
-            var color = get(),
-                displayColor = '',
-                hasChanged = !Color.equals(color, colorOnShow);
-
-            if (color) {
-                displayColor = color.toString(currentPreferredFormat);
-                // Update the selection palette with the current color
-                addColorToSelectionPalette(color);
-            }
-
-            if (isInput) {
-                boundElement.val(displayColor);
-            }
-
-            if (fireCallback && hasChanged) {
-                callbacks.change(color);
-                boundElement.trigger('change', [ color ]);
-            }
-        }
-
-        function reflow() {
-            if (!visible) {
-                return; // Calculations would be useless and wouldn't be reliable anyways
-            }
-            dragWidth = dragger.width();
-            dragHeight = dragger.height();
-            dragHelperHeight = dragHelper.height();
-            slideWidth = slider.width();
-            slideHeight = slider.height();
-            slideHelperHeight = slideHelper.height();
-            alphaWidth = alphaSlider.width();
-            alphaSlideHelperWidth = alphaSlideHelper.width();
-
-            if (!flat) {
-                container.css("position", "absolute");
-                if (opts.offset) {
-                    container.offset(opts.offset);
-                } else {
-                    container.offset(getOffset(container, offsetElement));
-                }
-            }
-
-            updateHelperLocations();
-
-            if (opts.showPalette) {
-                drawPalette();
-            }
-
-            boundElement.trigger('reflow.ColorPicker');
-        }
-
-        function destroy() {
-            boundElement.show();
-            offsetElement.off("click.ColorPicker touchstart.ColorPicker");
-            container.remove();
-            replacer.remove();
-            pickers[spect.id] = null;
-        }
-
-        function option(optionName, optionValue) {
-            if (optionName === undefined) {
-                return langx.mixin({}, opts);
-            }
-            if (optionValue === undefined) {
-                return opts[optionName];
-            }
-
-            opts[optionName] = optionValue;
-
-            if (optionName === "preferredFormat") {
-                currentPreferredFormat = opts.preferredFormat;
-            }
-            applyOptions();
-        }
-
-        function enable() {
-            disabled = false;
-            boundElement.attr("disabled", false);
-            offsetElement.removeClass("sp-disabled");
-        }
-
-        function disable() {
-            hide();
-            disabled = true;
-            boundElement.attr("disabled", true);
-            offsetElement.addClass("sp-disabled");
-        }
-
-        function setOffset(coord) {
-            opts.offset = coord;
-            reflow();
-        }
-
-        initialize();
-
-        var spect = {
-            show: show,
-            hide: hide,
-            toggle: toggle,
-            reflow: reflow,
-            option: option,
-            enable: enable,
-            disable: disable,
-            offset: setOffset,
-            set: function (c) {
-                set(c);
-                updateOriginalInput();
-            },
-            get: get,
-            destroy: destroy,
-            container: container
-        };
-
-        spect.id = pickers.push(spect) - 1;
-
-        return spect;
-    }
 
     var ColorPicker = langx.Evented.inherit({
         klassName : "ColorPicker",
 
-        init : init
+        init:function (element, o) {
 
+            var opts = instanceOptions(o, element),
+                flat = opts.flat,
+                showSelectionPalette = opts.showSelectionPalette,
+                localStorageKey = opts.localStorageKey,
+                theme = opts.theme,
+                callbacks = opts.callbacks,
+                resize = langx.debounce(reflow, 10),
+                visible = false,
+                isDragging = false,
+                dragWidth = 0,
+                dragHeight = 0,
+                dragHelperHeight = 0,
+                slideHeight = 0,
+                slideWidth = 0,
+                alphaWidth = 0,
+                alphaSlideHelperWidth = 0,
+                slideHelperHeight = 0,
+                currentHue = 0,
+                currentSaturation = 0,
+                currentValue = 0,
+                currentAlpha = 1,
+                palette = [],
+                paletteArray = [],
+                paletteLookup = {},
+                selectionPalette = opts.selectionPalette.slice(0),
+                maxSelectionSize = opts.maxSelectionSize,
+                draggingClass = "sp-dragging",
+                shiftMovementDirection = null;
+
+            var doc = element.ownerDocument,
+                body = doc.body,
+                boundElement = $(element),
+                disabled = false,
+                container = $(markup, doc).addClass(theme),
+                pickerContainer = container.find(".sp-picker-container"),
+                dragger = container.find(".sp-color"),
+                dragHelper = container.find(".sp-dragger"),
+                slider = container.find(".sp-hue"),
+                slideHelper = container.find(".sp-slider"),
+                alphaSliderInner = container.find(".sp-alpha-inner"),
+                alphaSlider = container.find(".sp-alpha"),
+                alphaSlideHelper = container.find(".sp-alpha-handle"),
+                textInput = container.find(".sp-input"),
+                paletteContainer = container.find(".sp-palette"),
+                initialColorContainer = container.find(".sp-initial"),
+                cancelButton = container.find(".sp-cancel"),
+                clearButton = container.find(".sp-clear"),
+                chooseButton = container.find(".sp-choose"),
+                toggleButton = container.find(".sp-palette-toggle"),
+                isInput = boundElement.is("input"),
+                isInputTypeColor = isInput && boundElement.attr("type") === "color" && inputTypeColorSupport(),
+                shouldReplace = isInput && !flat,
+                replacer = (shouldReplace) ? $(replaceInput).addClass(theme).addClass(opts.className).addClass(opts.replacerClassName) : $([]),
+                offsetElement = (shouldReplace) ? replacer : boundElement,
+                previewElement = replacer.find(".sp-preview-inner"),
+                initialColor = opts.color || (isInput && boundElement.val()),
+                colorOnShow = false,
+                currentPreferredFormat = opts.preferredFormat,
+                clickoutFiresChange = !opts.showButtons || opts.clickoutFiresChange,
+                isEmpty = !initialColor,
+                allowEmpty = opts.allowEmpty && !isInputTypeColor;
+
+            function applyOptions() {
+
+                if (opts.showPaletteOnly) {
+                    opts.showPalette = true;
+                }
+
+                toggleButton.text(opts.showPaletteOnly ? opts.togglePaletteMoreText : opts.togglePaletteLessText);
+
+                if (opts.palette) {
+                    palette = opts.palette.slice(0);
+                    paletteArray = langx.isArray(palette[0]) ? palette : [palette];
+                    paletteLookup = {};
+                    for (var i = 0; i < paletteArray.length; i++) {
+                        for (var j = 0; j < paletteArray[i].length; j++) {
+                            var rgb = Color(paletteArray[i][j]).toRgbString();
+                            paletteLookup[rgb] = true;
+                        }
+                    }
+                }
+
+                container.toggleClass("sp-flat", flat);
+                container.toggleClass("sp-input-disabled", !opts.showInput);
+                container.toggleClass("sp-alpha-enabled", opts.showAlpha);
+                container.toggleClass("sp-clear-enabled", allowEmpty);
+                container.toggleClass("sp-buttons-disabled", !opts.showButtons);
+                container.toggleClass("sp-palette-buttons-disabled", !opts.togglePaletteOnly);
+                container.toggleClass("sp-palette-disabled", !opts.showPalette);
+                container.toggleClass("sp-palette-only", opts.showPaletteOnly);
+                container.toggleClass("sp-initial-disabled", !opts.showInitial);
+                container.addClass(opts.className).addClass(opts.containerClassName);
+
+                reflow();
+            }
+
+            function initialize() {
+
+                if (browser.isIE) {
+                    container.find("*:not(input)").attr("unselectable", "on");
+                }
+
+                applyOptions();
+
+                if (shouldReplace) {
+                    boundElement.after(replacer).hide();
+                }
+
+                if (!allowEmpty) {
+                    clearButton.hide();
+                }
+
+                if (flat) {
+                    boundElement.after(container).hide();
+                }
+                else {
+
+                    var appendTo = opts.appendTo === "parent" ? boundElement.parent() : $(opts.appendTo);
+                    if (appendTo.length !== 1) {
+                        appendTo = $("body");
+                    }
+
+                    appendTo.append(container);
+                }
+
+                updateSelectionPaletteFromStorage();
+
+                offsetElement.on("click.ColorPicker touchstart.ColorPicker", function (e) {
+                    if (!disabled) {
+                        toggle();
+                    }
+
+                    e.stopPropagation();
+
+                    if (!$(e.target).is("input")) {
+                        e.preventDefault();
+                    }
+                });
+
+                if(boundElement.is(":disabled") || (opts.disabled === true)) {
+                    disable();
+                }
+
+                // Prevent clicks from bubbling up to document.  This would cause it to be hidden.
+                container.click(stopPropagation);
+
+                // Handle user typed input
+                textInput.change(setFromTextInput);
+                textInput.on("paste", function () {
+                    setTimeout(setFromTextInput, 1);
+                });
+                textInput.keydown(function (e) { if (e.keyCode == 13) { setFromTextInput(); } });
+
+                cancelButton.text(opts.cancelText);
+                cancelButton.on("click.ColorPicker", function (e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    revert();
+                    hide();
+                });
+
+                clearButton.attr("title", opts.clearText);
+                clearButton.on("click.ColorPicker", function (e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    isEmpty = true;
+                    move();
+
+                    if(flat) {
+                        //for the flat style, this is a change event
+                        updateOriginalInput(true);
+                    }
+                });
+
+                chooseButton.text(opts.chooseText);
+                chooseButton.on("click.ColorPicker", function (e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+
+                    if (browser.isIE && textInput.is(":focus")) {
+                        textInput.trigger('change');
+                    }
+
+                    if (isValid()) {
+                        updateOriginalInput(true);
+                        hide();
+                    }
+                });
+
+                toggleButton.text(opts.showPaletteOnly ? opts.togglePaletteMoreText : opts.togglePaletteLessText);
+                toggleButton.on("click.spectrum", function (e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+
+                    opts.showPaletteOnly = !opts.showPaletteOnly;
+
+                    // To make sure the Picker area is drawn on the right, next to the
+                    // Palette area (and not below the palette), first move the Palette
+                    // to the left to make space for the picker, plus 5px extra.
+                    // The 'applyOptions' function puts the whole container back into place
+                    // and takes care of the button-text and the sp-palette-only CSS class.
+                    if (!opts.showPaletteOnly && !flat) {
+                        container.css('left', '-=' + (pickerContainer.outerWidth(true) + 5));
+                    }
+                    applyOptions();
+                });
+
+                draggable(alphaSlider, function (dragX, dragY, e) {
+                    currentAlpha = (dragX / alphaWidth);
+                    isEmpty = false;
+                    if (e.shiftKey) {
+                        currentAlpha = Math.round(currentAlpha * 10) / 10;
+                    }
+
+                    move();
+                }, dragStart, dragStop);
+
+                draggable(slider, function (dragX, dragY) {
+                    currentHue = parseFloat(dragY / slideHeight);
+                    isEmpty = false;
+                    if (!opts.showAlpha) {
+                        currentAlpha = 1;
+                    }
+                    move();
+                }, dragStart, dragStop);
+
+                draggable(dragger, function (dragX, dragY, e) {
+
+                    // shift+drag should snap the movement to either the x or y axis.
+                    if (!e.shiftKey) {
+                        shiftMovementDirection = null;
+                    }
+                    else if (!shiftMovementDirection) {
+                        var oldDragX = currentSaturation * dragWidth;
+                        var oldDragY = dragHeight - (currentValue * dragHeight);
+                        var furtherFromX = Math.abs(dragX - oldDragX) > Math.abs(dragY - oldDragY);
+
+                        shiftMovementDirection = furtherFromX ? "x" : "y";
+                    }
+
+                    var setSaturation = !shiftMovementDirection || shiftMovementDirection === "x";
+                    var setValue = !shiftMovementDirection || shiftMovementDirection === "y";
+
+                    if (setSaturation) {
+                        currentSaturation = parseFloat(dragX / dragWidth);
+                    }
+                    if (setValue) {
+                        currentValue = parseFloat((dragHeight - dragY) / dragHeight);
+                    }
+
+                    isEmpty = false;
+                    if (!opts.showAlpha) {
+                        currentAlpha = 1;
+                    }
+
+                    move();
+
+                }, dragStart, dragStop);
+
+                if (!!initialColor) {
+                    set(initialColor);
+
+                    // In case color was black - update the preview UI and set the format
+                    // since the set function will not run (default color is black).
+                    updateUI();
+                    currentPreferredFormat = opts.preferredFormat || Color(initialColor).format;
+
+                    addColorToSelectionPalette(initialColor);
+                }
+                else {
+                    updateUI();
+                }
+
+                if (flat) {
+                    show();
+                }
+
+                function paletteElementClick(e) {
+                    if (e.data && e.data.ignore) {
+                        set($(e.target).closest(".sp-thumb-el").data("color"));
+                        move();
+                    }
+                    else {
+                        set($(e.target).closest(".sp-thumb-el").data("color"));
+                        move();
+
+                        // If the picker is going to close immediately, a palette selection
+                        // is a change.  Otherwise, it's a move only.
+                        if (opts.hideAfterPaletteSelect) {
+                            updateOriginalInput(true);
+                            hide();
+                        } else {
+                            updateOriginalInput();
+                        }
+                    }
+
+                    return false;
+                }
+
+                var paletteEvent = browser.isIE ? "mousedown.ColorPicker" : "click.ColorPicker touchstart.ColorPicker";
+                paletteContainer.on(paletteEvent, ".sp-thumb-el", paletteElementClick);
+                initialColorContainer.on(paletteEvent, ".sp-thumb-el:nth-child(1)", { ignore: true }, paletteElementClick);
+            }
+
+            function updateSelectionPaletteFromStorage() {
+
+                if (localStorageKey && window.localStorage) {
+
+                    // Migrate old palettes over to new format.  May want to remove this eventually.
+                    try {
+                        var oldPalette = window.localStorage[localStorageKey].split(",#");
+                        if (oldPalette.length > 1) {
+                            delete window.localStorage[localStorageKey];
+                            langx.each(oldPalette, function(i, c) {
+                                 addColorToSelectionPalette(c);
+                            });
+                        }
+                    }
+                    catch(e) { }
+
+                    try {
+                        selectionPalette = window.localStorage[localStorageKey].split(";");
+                    }
+                    catch (e) { }
+                }
+            }
+
+            function addColorToSelectionPalette(color) {
+                if (showSelectionPalette) {
+                    var rgb = Color(color).toRgbString();
+                    if (!paletteLookup[rgb] && langx.inArray(rgb, selectionPalette) === -1) {
+                        selectionPalette.push(rgb);
+                        while(selectionPalette.length > maxSelectionSize) {
+                            selectionPalette.shift();
+                        }
+                    }
+
+                    if (localStorageKey && window.localStorage) {
+                        try {
+                            window.localStorage[localStorageKey] = selectionPalette.join(";");
+                        }
+                        catch(e) { }
+                    }
+                }
+            }
+
+            function getUniqueSelectionPalette() {
+                var unique = [];
+                if (opts.showPalette) {
+                    for (var i = 0; i < selectionPalette.length; i++) {
+                        var rgb = Color(selectionPalette[i]).toRgbString();
+
+                        if (!paletteLookup[rgb]) {
+                            unique.push(selectionPalette[i]);
+                        }
+                    }
+                }
+
+                return unique.reverse().slice(0, opts.maxSelectionSize);
+            }
+
+            function drawPalette() {
+
+                var currentColor = get();
+
+                var html = langx.map(paletteArray, function (palette, i) {
+                    return paletteTemplate(palette, currentColor, "sp-palette-row sp-palette-row-" + i, opts);
+                });
+
+                updateSelectionPaletteFromStorage();
+
+                if (selectionPalette) {
+                    html.push(paletteTemplate(getUniqueSelectionPalette(), currentColor, "sp-palette-row sp-palette-row-selection", opts));
+                }
+
+                paletteContainer.html(html.join(""));
+            }
+
+            function drawInitial() {
+                if (opts.showInitial) {
+                    var initial = colorOnShow;
+                    var current = get();
+                    initialColorContainer.html(paletteTemplate([initial, current], current, "sp-palette-row-initial", opts));
+                }
+            }
+
+            function dragStart() {
+                if (dragHeight <= 0 || dragWidth <= 0 || slideHeight <= 0) {
+                    reflow();
+                }
+                isDragging = true;
+                container.addClass(draggingClass);
+                shiftMovementDirection = null;
+                boundElement.trigger('dragstart.ColorPicker', [ get() ]);
+            }
+
+            function dragStop() {
+                isDragging = false;
+                container.removeClass(draggingClass);
+                boundElement.trigger('dragstop.ColorPicker', [ get() ]);
+            }
+
+            function setFromTextInput() {
+
+                var value = textInput.val();
+
+                if ((value === null || value === "") && allowEmpty) {
+                    set(null);
+                    move();
+                    updateOriginalInput();
+                }
+                else {
+                    var tiny = Color(value);
+                    if (tiny.isValid()) {
+                        set(tiny);
+                        move();
+                        updateOriginalInput();
+                    }
+                    else {
+                        textInput.addClass("sp-validation-error");
+                    }
+                }
+            }
+
+            function toggle() {
+                if (visible) {
+                    hide();
+                }
+                else {
+                    show();
+                }
+            }
+
+            function show() {
+                var event = eventer.create('beforeShow.ColorPicker');
+
+                if (visible) {
+                    reflow();
+                    return;
+                }
+
+                boundElement.trigger(event, [ get() ]);
+
+                if (callbacks.beforeShow(get()) === false || event.isDefaultPrevented()) {
+                    return;
+                }
+
+                hideAll();
+                visible = true;
+
+                $(doc).on("keydown.ColorPicker", onkeydown);
+                $(doc).on("click.ColorPicker", clickout);
+                $(window).on("resize.ColorPicker", resize);
+                replacer.addClass("sp-active");
+                container.removeClass("sp-hidden");
+
+                reflow();
+                updateUI();
+
+                colorOnShow = get();
+
+                drawInitial();
+                callbacks.show(colorOnShow);
+                boundElement.trigger('show.ColorPicker', [ colorOnShow ]);
+            }
+
+            function onkeydown(e) {
+                // Close on ESC
+                if (e.keyCode === 27) {
+                    hide();
+                }
+            }
+
+            function clickout(e) {
+                // Return on right click.
+                if (e.button == 2) { return; }
+
+                // If a drag event was happening during the mouseup, don't hide
+                // on click.
+                if (isDragging) { return; }
+
+                if (clickoutFiresChange) {
+                    updateOriginalInput(true);
+                }
+                else {
+                    revert();
+                }
+                hide();
+            }
+
+            function hide() {
+                // Return if hiding is unnecessary
+                if (!visible || flat) { return; }
+                visible = false;
+
+                $(doc).off("keydown.ColorPicker", onkeydown);
+                $(doc).off("click.ColorPicker", clickout);
+                $(window).off("resize.ColorPicker", resize);
+
+                replacer.removeClass("sp-active");
+                container.addClass("sp-hidden");
+
+                callbacks.hide(get());
+                boundElement.trigger('hide.ColorPicker', [ get() ]);
+            }
+
+            function revert() {
+                set(colorOnShow, true);
+                updateOriginalInput(true);
+            }
+
+            function set(color, ignoreFormatChange) {
+                if (Color.equals(color, get())) {
+                    // Update UI just in case a validation error needs
+                    // to be cleared.
+                    updateUI();
+                    return;
+                }
+
+                var newColor, newHsv;
+                if (!color && allowEmpty) {
+                    isEmpty = true;
+                } else {
+                    isEmpty = false;
+                    newColor = colors.Color(color);
+                    newHsv = newColor.toHsv();
+
+                    currentHue = (newHsv.h % 360) / 360;
+                    currentSaturation = newHsv.s;
+                    currentValue = newHsv.v;
+                    currentAlpha = newHsv.a;
+                }
+                updateUI();
+
+                if (newColor && newColor.isValid() && !ignoreFormatChange) {
+                    currentPreferredFormat = opts.preferredFormat || newColor.getFormat();
+                }
+            }
+
+            function get(opts) {
+                opts = opts || { };
+
+                if (allowEmpty && isEmpty) {
+                    return null;
+                }
+
+                return Color.fromRatio({
+                    h: currentHue,
+                    s: currentSaturation,
+                    v: currentValue,
+                    a: Math.round(currentAlpha * 1000) / 1000
+                }, { format: opts.format || currentPreferredFormat });
+            }
+
+            function isValid() {
+                return !textInput.hasClass("sp-validation-error");
+            }
+
+            function move() {
+                updateUI();
+
+                callbacks.move(get());
+                boundElement.trigger('move.ColorPicker', [ get() ]);
+            }
+
+            function updateUI() {
+
+                textInput.removeClass("sp-validation-error");
+
+                updateHelperLocations();
+
+                // Update dragger background color (gradients take care of saturation and value).
+                var flatColor = Color.fromRatio({ h: currentHue, s: 1, v: 1 });
+                dragger.css("background-color", flatColor.toHexString());
+
+                // Get a format that alpha will be included in (hex and names ignore alpha)
+                var format = currentPreferredFormat;
+                if (currentAlpha < 1 && !(currentAlpha === 0 && format === "name")) {
+                    if (format === "hex" || format === "hex3" || format === "hex6" || format === "name") {
+                        format = "rgb";
+                    }
+                }
+
+                var realColor = get({ format: format }),
+                    displayColor = '';
+
+                 //reset background info for preview element
+                previewElement.removeClass("sp-clear-display");
+                previewElement.css('background-color', 'transparent');
+
+                if (!realColor && allowEmpty) {
+                    // Update the replaced elements background with icon indicating no color selection
+                    previewElement.addClass("sp-clear-display");
+                }
+                else {
+                    var realHex = realColor.toHexString(),
+                        realRgb = realColor.toRgbString();
+
+                    // Update the replaced elements background color (with actual selected color)
+                    previewElement.css("background-color", realRgb);
+
+                    if (opts.showAlpha) {
+                        var rgb = realColor.toRgb();
+                        rgb.a = 0;
+                        var realAlpha = Color(rgb).toRgbString();
+                        var gradient = "linear-gradient(left, " + realAlpha + ", " + realHex + ")";
+
+                        if (browser.isIE) {
+                            alphaSliderInner.css("filter", Color(realAlpha).toFilter({ gradientType: 1 }, realHex));
+                        }
+                        else {
+                            alphaSliderInner.css("background", "-webkit-" + gradient);
+                            alphaSliderInner.css("background", "-moz-" + gradient);
+                            alphaSliderInner.css("background", "-ms-" + gradient);
+                            // Use current syntax gradient on unprefixed property.
+                            alphaSliderInner.css("background",
+                                "linear-gradient(to right, " + realAlpha + ", " + realHex + ")");
+                        }
+                    }
+
+                    displayColor = realColor.toString(format);
+                }
+
+                // Update the text entry input as it changes happen
+                if (opts.showInput) {
+                    textInput.val(displayColor);
+                }
+
+                if (opts.showPalette) {
+                    drawPalette();
+                }
+
+                drawInitial();
+            }
+
+            function updateHelperLocations() {
+                var s = currentSaturation;
+                var v = currentValue;
+
+                if(allowEmpty && isEmpty) {
+                    //if selected color is empty, hide the helpers
+                    alphaSlideHelper.hide();
+                    slideHelper.hide();
+                    dragHelper.hide();
+                }
+                else {
+                    //make sure helpers are visible
+                    alphaSlideHelper.show();
+                    slideHelper.show();
+                    dragHelper.show();
+
+                    // Where to show the little circle in that displays your current selected color
+                    var dragX = s * dragWidth;
+                    var dragY = dragHeight - (v * dragHeight);
+                    dragX = Math.max(
+                        -dragHelperHeight,
+                        Math.min(dragWidth - dragHelperHeight, dragX - dragHelperHeight)
+                    );
+                    dragY = Math.max(
+                        -dragHelperHeight,
+                        Math.min(dragHeight - dragHelperHeight, dragY - dragHelperHeight)
+                    );
+                    dragHelper.css({
+                        "top": dragY + "px",
+                        "left": dragX + "px"
+                    });
+
+                    var alphaX = currentAlpha * alphaWidth;
+                    alphaSlideHelper.css({
+                        "left": (alphaX - (alphaSlideHelperWidth / 2)) + "px"
+                    });
+
+                    // Where to show the bar that displays your current selected hue
+                    var slideY = (currentHue) * slideHeight;
+                    slideHelper.css({
+                        "top": (slideY - slideHelperHeight) + "px"
+                    });
+                }
+            }
+
+            function updateOriginalInput(fireCallback) {
+                var color = get(),
+                    displayColor = '',
+                    hasChanged = !Color.equals(color, colorOnShow);
+
+                if (color) {
+                    displayColor = color.toString(currentPreferredFormat);
+                    // Update the selection palette with the current color
+                    addColorToSelectionPalette(color);
+                }
+
+                if (isInput) {
+                    boundElement.val(displayColor);
+                }
+
+                if (fireCallback && hasChanged) {
+                    callbacks.change(color);
+                    boundElement.trigger('change', [ color ]);
+                }
+            }
+
+            function reflow() {
+                if (!visible) {
+                    return; // Calculations would be useless and wouldn't be reliable anyways
+                }
+                dragWidth = dragger.width();
+                dragHeight = dragger.height();
+                dragHelperHeight = dragHelper.height();
+                slideWidth = slider.width();
+                slideHeight = slider.height();
+                slideHelperHeight = slideHelper.height();
+                alphaWidth = alphaSlider.width();
+                alphaSlideHelperWidth = alphaSlideHelper.width();
+
+                if (!flat) {
+                    container.css("position", "absolute");
+                    if (opts.offset) {
+                        container.offset(opts.offset);
+                    } else {
+                        container.offset(getOffset(container, offsetElement));
+                    }
+                }
+
+                updateHelperLocations();
+
+                if (opts.showPalette) {
+                    drawPalette();
+                }
+
+                boundElement.trigger('reflow.ColorPicker');
+            }
+
+            function destroy() {
+                boundElement.show();
+                offsetElement.off("click.ColorPicker touchstart.ColorPicker");
+                container.remove();
+                replacer.remove();
+                pickers[spect.id] = null;
+            }
+
+            function option(optionName, optionValue) {
+                if (optionName === undefined) {
+                    return langx.mixin({}, opts);
+                }
+                if (optionValue === undefined) {
+                    return opts[optionName];
+                }
+
+                opts[optionName] = optionValue;
+
+                if (optionName === "preferredFormat") {
+                    currentPreferredFormat = opts.preferredFormat;
+                }
+                applyOptions();
+            }
+
+            function enable() {
+                disabled = false;
+                boundElement.attr("disabled", false);
+                offsetElement.removeClass("sp-disabled");
+            }
+
+            function disable() {
+                hide();
+                disabled = true;
+                boundElement.attr("disabled", true);
+                offsetElement.addClass("sp-disabled");
+            }
+
+            function setOffset(coord) {
+                opts.offset = coord;
+                reflow();
+            }
+
+            initialize();
+
+            var spect = {
+                show: show,
+                hide: hide,
+                toggle: toggle,
+                reflow: reflow,
+                option: option,
+                enable: enable,
+                disable: disable,
+                offset: setOffset,
+                set: function (c) {
+                    set(c);
+                    updateOriginalInput();
+                },
+                get: get,
+                destroy: destroy,
+                container: container
+            };
+
+            spect.id = pickers.push(spect) - 1;
+
+            return spect;
+        }
     });
 
 
@@ -13348,96 +13835,6 @@ define('skylark-widgets-colorpicker/ColorPicker',[
         };
     }
 
-    /**
-    * Lightweight drag helper.  Handles containment within the element, so that
-    * when dragging, the x is within [0,element.width] and y is within [0,element.height]
-    */
-    function draggable(element, onmove, onstart, onstop) {
-        onmove = onmove || function () { };
-        onstart = onstart || function () { };
-        onstop = onstop || function () { };
-        var doc = document;
-        var dragging = false;
-        var offset = {};
-        var maxHeight = 0;
-        var maxWidth = 0;
-        var hasTouch = ('ontouchstart' in window);
-
-        var duringDragEvents = {};
-        duringDragEvents["selectstart"] = prevent;
-        duringDragEvents["dragstart"] = prevent;
-        duringDragEvents["touchmove mousemove"] = move;
-        duringDragEvents["touchend mouseup"] = stop;
-
-        function prevent(e) {
-            if (e.stopPropagation) {
-                e.stopPropagation();
-            }
-            if (e.preventDefault) {
-                e.preventDefault();
-            }
-            e.returnValue = false;
-        }
-
-        function move(e) {
-            if (dragging) {
-                // Mouseup happened outside of window
-                if (browser.isIE && doc.documentMode < 9 && !e.button) {
-                    return stop();
-                }
-
-                var t0 = e.originalEvent && e.originalEvent.touches && e.originalEvent.touches[0];
-                var pageX = t0 && t0.pageX || e.pageX;
-                var pageY = t0 && t0.pageY || e.pageY;
-
-                var dragX = Math.max(0, Math.min(pageX - offset.left, maxWidth));
-                var dragY = Math.max(0, Math.min(pageY - offset.top, maxHeight));
-
-                if (hasTouch) {
-                    // Stop scrolling in iOS
-                    prevent(e);
-                }
-
-                onmove.apply(element, [dragX, dragY, e]);
-            }
-        }
-
-        function start(e) {
-            var rightclick = (e.which) ? (e.which == 3) : (e.button == 2);
-
-            if (!rightclick && !dragging) {
-                if (onstart.apply(element, arguments) !== false) {
-                    dragging = true;
-                    maxHeight = $(element).height();
-                    maxWidth = $(element).width();
-                    offset = $(element).offset();
-
-                    $(doc).on(duringDragEvents);
-                    $(doc.body).addClass("sp-dragging");
-
-                    move(e);
-
-                    prevent(e);
-                }
-            }
-        }
-
-        function stop() {
-            if (dragging) {
-                $(doc).off(duringDragEvents);
-                $(doc.body).removeClass("sp-dragging");
-
-                // Wait a tick before notifying observers to allow the click event
-                // to fire in Chrome.
-                setTimeout(function() {
-                    onstop.apply(element, arguments);
-                }, 0);
-            }
-            dragging = false;
-        }
-
-        $(element).on("touchstart mousedown", start);
-    }
 
     /**
     * Define a query plugin
@@ -13499,7 +13896,7 @@ define('skylark-widgets-colorpicker/ColorPicker',[
 
     $.fn.colorPicker = Plugin;
 
-    return skylark.attach("ui.ColorPicker",ColorPicker);
+    return skylark.attach("widgets.ColorPicker",ColorPicker);
 
 });
 
