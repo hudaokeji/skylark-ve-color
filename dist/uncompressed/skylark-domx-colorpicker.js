@@ -1,8 +1,8 @@
 /**
- * skylark-widgets-colorpicker - The skylark color picker widget
+ * skylark-domx-colorpicker - The skylark dom plugin for picking color 
  * @author Hudaokeji, Inc.
  * @version v0.9.0
- * @link https://github.com/skylarkui/skylark-widgets-colorpicker/
+ * @link https://github.com/skylark-domx/skylark-domx-colorpicker/
  * @license MIT
  */
 (function(factory,globals) {
@@ -75,7 +75,7 @@
   factory(define,require);
 
   if (!isAmd) {
-    var skylarkjs = require("skylark-langx/skylark");
+    var skylarkjs = require("skylark-langx-ns");
 
     if (isCmd) {
       module.exports = skylarkjs;
@@ -86,18 +86,122 @@
 
 })(function(define,require) {
 
-define('skylark-widgets-colorpicker/ColorPicker',[
+define('skylark-domx-colorpicker/draggable',[
    "skylark-langx/skylark",
     "skylark-langx/langx",
     "skylark-domx-browser",
     "skylark-domx-noder",
     "skylark-domx-eventer",
     "skylark-domx-finder",
+    "skylark-domx-query"
+],function(skylark, langx, browser, noder, eventer,finder, $) {
+    /**
+    * Lightweight drag helper.  Handles containment within the element, so that
+    * when dragging, the x is within [0,element.width] and y is within [0,element.height]
+    */
+    function draggable(element, onmove, onstart, onstop) {
+        onmove = onmove || function () { };
+        onstart = onstart || function () { };
+        onstop = onstop || function () { };
+        var doc = document;
+        var dragging = false;
+        var offset = {};
+        var maxHeight = 0;
+        var maxWidth = 0;
+        var hasTouch = ('ontouchstart' in window);
+
+        var duringDragEvents = {};
+        duringDragEvents["selectstart"] = prevent;
+        duringDragEvents["dragstart"] = prevent;
+        duringDragEvents["touchmove mousemove"] = move;
+        duringDragEvents["touchend mouseup"] = stop;
+
+        function prevent(e) {
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+            e.returnValue = false;
+        }
+
+        function move(e) {
+            if (dragging) {
+                // Mouseup happened outside of window
+                if (browser.isIE && doc.documentMode < 9 && !e.button) {
+                    return stop();
+                }
+
+                var t0 = e.originalEvent && e.originalEvent.touches && e.originalEvent.touches[0];
+                var pageX = t0 && t0.pageX || e.pageX;
+                var pageY = t0 && t0.pageY || e.pageY;
+
+                var dragX = Math.max(0, Math.min(pageX - offset.left, maxWidth));
+                var dragY = Math.max(0, Math.min(pageY - offset.top, maxHeight));
+
+                if (hasTouch) {
+                    // Stop scrolling in iOS
+                    prevent(e);
+                }
+
+                onmove.apply(element, [dragX, dragY, e]);
+            }
+        }
+
+        function start(e) {
+            var rightclick = (e.which) ? (e.which == 3) : (e.button == 2);
+
+            if (!rightclick && !dragging) {
+                if (onstart.apply(element, arguments) !== false) {
+                    dragging = true;
+                    maxHeight = $(element).height();
+                    maxWidth = $(element).width();
+                    offset = $(element).offset();
+
+                    $(doc).on(duringDragEvents);
+                    $(doc.body).addClass("sp-dragging");
+
+                    move(e);
+
+                    prevent(e);
+                }
+            }
+        }
+
+        function stop() {
+            if (dragging) {
+                $(doc).off(duringDragEvents);
+                $(doc.body).removeClass("sp-dragging");
+
+                // Wait a tick before notifying observers to allow the click event
+                // to fire in Chrome.
+                setTimeout(function() {
+                    onstop.apply(element, arguments);
+                }, 0);
+            }
+            dragging = false;
+        }
+
+        $(element).on("touchstart mousedown", start);
+    }
+	
+	return draggable;
+});
+define('skylark-domx-colorpicker/ColorPicker',[
+   "skylark-langx/skylark",
+    "skylark-langx/langx",
+    "skylark-domx-browser",
+    "skylark-domx-noder",
+    "skylark-domx-finder",
     "skylark-domx-query",
+    "skylark-domx-eventer",
+    "skylark-domx-styler",
+    "skylark-domx-fx",
     "skylark-data-color/colors",
     "skylark-data-color/Color",
-    "skylark-widgets-base/Widget"
-],function(skylark, langx, browser, noder, eventer,finder, $, colors, Color,  Widget) {
+    "./draggable"
+],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,colors, Color,draggable) {
     "use strict";
 
     var noop = langx.noop;
@@ -1174,11 +1278,11 @@ define('skylark-widgets-colorpicker/ColorPicker',[
 
     $.fn.colorPicker = Plugin;
 
-    return skylark.attach("widgets.ColorPicker",ColorPicker);
+    return skylark.attach("domx.ColorPicker",ColorPicker);
 
 });
 
-define('skylark-widgets-colorpicker/i18n/texts_ja',[
+define('skylark-domx-colorpicker/i18n/texts_ja',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["ja"] = {
@@ -1188,7 +1292,7 @@ define('skylark-widgets-colorpicker/i18n/texts_ja',[
 
     return localization;
 });
-define('skylark-widgets-colorpicker/i18n/texts_zh-cn',[
+define('skylark-domx-colorpicker/i18n/texts_zh-cn',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["zh-cn"] = {
@@ -1204,7 +1308,7 @@ define('skylark-widgets-colorpicker/i18n/texts_zh-cn',[
 
 });
 
-define('skylark-widgets-colorpicker/i18n/texts_zh-tw',[
+define('skylark-domx-colorpicker/i18n/texts_zh-tw',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["zh-tw"] = {
@@ -1219,7 +1323,7 @@ define('skylark-widgets-colorpicker/i18n/texts_zh-tw',[
     return localization;
 
 });
-define('skylark-widgets-colorpicker/main',[
+define('skylark-domx-colorpicker/main',[
     "./ColorPicker",
     "./i18n/texts_ja",
     "./i18n/texts_zh-cn",
@@ -1228,8 +1332,8 @@ define('skylark-widgets-colorpicker/main',[
     return ColorPicker;
 });
 
-define('skylark-widgets-colorpicker', ['skylark-widgets-colorpicker/main'], function (main) { return main; });
+define('skylark-domx-colorpicker', ['skylark-domx-colorpicker/main'], function (main) { return main; });
 
 
 },this);
-//# sourceMappingURL=sourcemaps/skylark-widgets-colorpicker.js.map
+//# sourceMappingURL=sourcemaps/skylark-domx-colorpicker.js.map

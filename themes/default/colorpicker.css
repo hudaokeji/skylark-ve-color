@@ -8,6 +8,9 @@
     /* https://github.com/bgrins/spectrum/issues/40 */
     z-index: 9999994;
     overflow: hidden;
+
+    background-color: rgb(34, 34, 34);
+    box-shadow: rgba(0, 0, 0, 0.3) 0px 1px 3px;    
 }
 .sp-container.sp-flat {
     position: relative;

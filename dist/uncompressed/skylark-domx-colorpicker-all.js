@@ -1,8 +1,8 @@
 /**
- * skylark-widgets-colorpicker - The skylark color picker widget
+ * skylark-domx-colorpicker - The skylark dom plugin for picking color 
  * @author Hudaokeji, Inc.
  * @version v0.9.0
- * @link https://github.com/skylarkui/skylark-widgets-colorpicker/
+ * @link https://github.com/skylark-domx/skylark-domx-colorpicker/
  * @license MIT
  */
 (function(factory,globals) {
@@ -75,7 +75,7 @@
   factory(define,require);
 
   if (!isAmd) {
-    var skylarkjs = require("skylark-langx/skylark");
+    var skylarkjs = require("skylark-langx-ns");
 
     if (isCmd) {
       module.exports = skylarkjs;
@@ -264,7 +264,6 @@ define('skylark-langx-types/types',[
         }
     }
 
-
     function isNull(obj) {
         return obj === null;
     }
@@ -346,7 +345,12 @@ define('skylark-langx-types/types',[
 
         isHtmlNode: isHtmlNode,
 
+        isNaN : function (obj) {
+            return isNaN(obj);
+        },
+
         isNull: isNull,
+
 
         isNumber: isNumber,
 
@@ -4304,6 +4308,9 @@ function removeSelfClosingTags(xml) {
         return new RegExp("^(" + (blockNodes.join('|')) + ")$").test(node.nodeName.toLowerCase());
     }
 
+    function isActive (elem) {
+            return elem === document.activeElement && (elem.type || elem.href);
+    }
 
     /*   
      * Get the owner document object for the specified element.
@@ -4427,6 +4434,18 @@ function removeSelfClosingTags(xml) {
     }
 
 
+    function selectable(elem, selectable) {
+        if (elem === undefined || elem.style === undefined)
+            return;
+        elem.onselectstart = selectable ? function () {
+            return false;
+        } : function () {
+        };
+        elem.style.MozUserSelect = selectable ? 'auto' : 'none';
+        elem.style.KhtmlUserSelect = selectable ? 'auto' : 'none';
+        elem.unselectable = selectable ? 'on' : 'off';
+    }
+
     /*   
      * traverse the specified node and its descendants, perform the callback function on each
      * @param {Node} node
@@ -4500,6 +4519,12 @@ function removeSelfClosingTags(xml) {
     langx.mixin(noder, {
         active  : activeElement,
 
+        after: after,
+
+        append: append,
+
+        before: before,
+
         blur : function(el) {
             el.blur();
         },
@@ -4509,14 +4534,16 @@ function removeSelfClosingTags(xml) {
         },
 
         clone: clone,
+
+        contains: contains,
+
         contents: contents,
 
         createElement: createElement,
 
         createFragment: createFragment,
 
-        contains: contains,
-
+     
         createTextNode: createTextNode,
 
         doc: doc,
@@ -4528,6 +4555,8 @@ function removeSelfClosingTags(xml) {
         focusable: focusable,
 
         html: html,
+
+        isActive,
 
         isChildOf: isChildOf,
 
@@ -4545,13 +4574,7 @@ function removeSelfClosingTags(xml) {
 
         ownerWindow: ownerWindow,
 
-        after: after,
-
-        before: before,
-
         prepend: prepend,
-
-        append: append,
 
         reflow: reflow,
 
@@ -4560,6 +4583,8 @@ function removeSelfClosingTags(xml) {
         removeChild : removeChild,
 
         replace: replace,
+
+        selectable,
 
         traverse: traverse,
 
@@ -5706,448 +5731,6 @@ define('skylark-domx-finder/main',[
 });
 define('skylark-domx-finder', ['skylark-domx-finder/main'], function (main) { return main; });
 
-define('skylark-domx-data/data',[
-    "skylark-langx/skylark",
-    "skylark-langx/langx",
-    "skylark-domx-finder",
-    "skylark-domx-noder"
-], function(skylark, langx, finder,noder) {
-    var map = Array.prototype.map,
-        filter = Array.prototype.filter,
-        camelCase = langx.camelCase,
-        deserializeValue = langx.deserializeValue,
-
-        capitalRE = /([A-Z])/g,
-        propMap = {
-            'tabindex': 'tabIndex',
-            'readonly': 'readOnly',
-            'for': 'htmlFor',
-            'class': 'className',
-            'maxlength': 'maxLength',
-            'cellspacing': 'cellSpacing',
-            'cellpadding': 'cellPadding',
-            'rowspan': 'rowSpan',
-            'colspan': 'colSpan',
-            'usemap': 'useMap',
-            'frameborder': 'frameBorder',
-            'contenteditable': 'contentEditable'
-        };
-
-    // Strip and collapse whitespace according to HTML spec
-    function stripAndCollapse( value ) {
-      var tokens = value.match( /[^\x20\t\r\n\f]+/g ) || [];
-      return tokens.join( " " );
-    }
-
-
-    var valHooks = {
-      option: {
-        get: function( elem ) {
-          var val = elem.getAttribute( "value" );
-          return val != null ?  val :  stripAndCollapse(text( elem ) );
-        }
-      },
-      select: {
-        get: function( elem ) {
-          var value, option, i,
-            options = elem.options,
-            index = elem.selectedIndex,
-            one = elem.type === "select-one",
-            values = one ? null : [],
-            max = one ? index + 1 : options.length;
-
-          if ( index < 0 ) {
-            i = max;
-
-          } else {
-            i = one ? index : 0;
-          }
-
-          // Loop through all the selected options
-          for ( ; i < max; i++ ) {
-            option = options[ i ];
-
-            if ( option.selected &&
-
-                // Don't return options that are disabled or in a disabled optgroup
-                !option.disabled &&
-                ( !option.parentNode.disabled ||
-                  !noder.nodeName( option.parentNode, "optgroup" ) ) ) {
-
-              // Get the specific value for the option
-              value = val(option);
-
-              // We don't need an array for one selects
-              if ( one ) {
-                return value;
-              }
-
-              // Multi-Selects return an array
-              values.push( value );
-            }
-          }
-
-          return values;
-        },
-
-        set: function( elem, value ) {
-          var optionSet, option,
-            options = elem.options,
-            values = langx.makeArray( value ),
-            i = options.length;
-
-          while ( i-- ) {
-            option = options[ i ];
-
-            /* eslint-disable no-cond-assign */
-
-            if ( option.selected =
-              langx.inArray( valHooks.option.get( option ), values ) > -1
-            ) {
-              optionSet = true;
-            }
-
-            /* eslint-enable no-cond-assign */
-          }
-
-          // Force browsers to behave consistently when non-matching value is set
-          if ( !optionSet ) {
-            elem.selectedIndex = -1;
-          }
-          return values;
-        }
-      }
-    };
-
-
-    // Radios and checkboxes getter/setter
-    langx.each( [ "radio", "checkbox" ], function() {
-      valHooks[ this ] = {
-        set: function( elem, value ) {
-          if ( langx.isArray( value ) ) {
-            return ( elem.checked = langx.inArray( val(elem), value ) > -1 );
-          }
-        }
-      };
-    });
-
-
-
-    /*
-     * Set property values
-     * @param {Object} elm  
-     * @param {String} name
-     * @param {String} value
-     */
-
-    function setAttribute(elm, name, value) {
-        if (value == null) {
-            elm.removeAttribute(name);
-        } else {
-            elm.setAttribute(name, value);
-        }
-    }
-
-    function aria(elm, name, value) {
-        return this.attr(elm, "aria-" + name, value);
-    }
-
-    /*
-     * Set property values
-     * @param {Object} elm  
-     * @param {String} name
-     * @param {String} value
-     */
-
-    function attr(elm, name, value) {
-        if (value === undefined) {
-            if (typeof name === "object") {
-                for (var attrName in name) {
-                    attr(elm, attrName, name[attrName]);
-                }
-                return this;
-            } else {
-                return elm.getAttribute ? elm.getAttribute(name) : elm[name];
-            }
-        } else {
-            elm.setAttribute ? elm.setAttribute(name, value) : elm[name] = value;
-            return this;
-        }
-    }
-
-
-    /*
-     *  Read all "data-*" attributes from a node
-     * @param {Object} elm  
-     */
-
-    function _attributeData(elm) {
-        var store = {}
-        langx.each(elm.attributes || [], function(i, attr) {
-            if (attr.name.indexOf('data-') == 0) {
-                store[camelCase(attr.name.replace('data-', ''))] = deserializeValue(attr.value);
-            }
-        })
-        return store;
-    }
-
-    function _store(elm, confirm) {
-        var store = elm["_$_store"];
-        if (!store && confirm) {
-            store = elm["_$_store"] = _attributeData(elm);
-        }
-        return store;
-    }
-
-    function _getData(elm, name) {
-        if (name === undefined) {
-            return _store(elm, true);
-        } else {
-            var store = _store(elm);
-            if (store) {
-                if (name in store) {
-                    return store[name];
-                }
-                var camelName = camelCase(name);
-                if (camelName in store) {
-                    return store[camelName];
-                }
-            }
-            var attrName = 'data-' + name.replace(capitalRE, "-$1").toLowerCase()
-            return attr(elm, attrName);
-        }
-
-    }
-
-    function _setData(elm, name, value) {
-        var store = _store(elm, true);
-        store[camelCase(name)] = value;
-    }
-
-
-    /*
-     * xxx
-     * @param {Object} elm  
-     * @param {String} name
-     * @param {String} value
-     */
-    function data(elm, name, value) {
-
-        if (value === undefined) {
-            if (typeof name === "object") {
-                for (var dataAttrName in name) {
-                    _setData(elm, dataAttrName, name[dataAttrName]);
-                }
-                return this;
-            } else {
-                return _getData(elm, name);
-            }
-        } else {
-            _setData(elm, name, value);
-            return this;
-        }
-    } 
-    /*
-     * Remove from the element all items that have not yet been run. 
-     * @param {Object} elm  
-     */
-
-    function cleanData(elm) {
-        if (elm["_$_store"]) {
-            delete elm["_$_store"];
-        }
-    }
-
-    /*
-     * Remove a previously-stored piece of data. 
-     * @param {Object} elm  
-     * @param {Array} names
-     */
-    function removeData(elm, names) {
-        if (names) {
-            if (langx.isString(names)) {
-                names = names.split(/\s+/);
-            }
-            var store = _store(elm, true);
-            names.forEach(function(name) {
-                delete store[name];
-            });            
-        } else {
-            cleanData(elm);
-        }
-        return this;
-    }
-
-    /*
-     * xxx 
-     * @param {Object} elm  
-     * @param {Array} names
-     */
-    function pluck(nodes, property) {
-        return map.call(nodes, function(elm) {
-            return elm[property];
-        });
-    }
-
-    /*
-     * Get or set the value of an property for the specified element.
-     * @param {Object} elm  
-     * @param {String} name
-     * @param {String} value
-     */
-    function prop(elm, name, value) {
-        name = propMap[name] || name;
-        if (value === undefined) {
-            return elm[name];
-        } else {
-            elm[name] = value;
-            return this;
-        }
-    }
-
-    /*
-     * remove Attributes  
-     * @param {Object} elm  
-     * @param {String} name
-     */
-    function removeAttr(elm, name) {
-        name.split(' ').forEach(function(attr) {
-            setAttribute(elm, attr);
-        });
-        return this;
-    }
-
-
-    /*
-     * Remove the value of a property for the first element in the set of matched elements or set one or more properties for every matched element.
-     * @param {Object} elm  
-     * @param {String} name
-     */
-    function removeProp(elm, name) {
-        name.split(' ').forEach(function(prop) {
-            delete elm[prop];
-        });
-        return this;
-    }
-
-    /*   
-     * Get the combined text contents of each element in the set of matched elements, including their descendants, or set the text contents of the matched elements.  
-     * @param {Object} elm  
-     * @param {String} txt
-     */
-    function text(elm, txt) {
-        if (txt === undefined) {
-            return elm.textContent;
-        } else {
-            elm.textContent = txt == null ? '' : '' + txt;
-            return this;
-        }
-    }
-
-    /*   
-     * Get the current value of the first element in the set of matched elements or set the value of every matched element.
-     * @param {Object} elm  
-     * @param {String} value
-     */
-    function val(elm, value) {
-        var hooks = valHooks[ elm.type ] || valHooks[ elm.nodeName.toLowerCase() ];
-        if (value === undefined) {
-/*
-            if (elm.multiple) {
-                // select multiple values
-                var selectedOptions = filter.call(finder.find(elm, "option"), (function(option) {
-                    return option.selected;
-                }));
-                return pluck(selectedOptions, "value");
-            } else {
-                if (/input|textarea/i.test(elm.tagName)) {
-                  return elm.value;
-                }
-                return text(elm);
-            }
-*/
-
-          if ( hooks &&  "get" in hooks &&  ( ret = hooks.get( elm, "value" ) ) !== undefined ) {
-            return ret;
-          }
-
-          ret = elm.value;
-
-          // Handle most common string cases
-          if ( typeof ret === "string" ) {
-            return ret.replace( /\r/g, "" );
-          }
-
-          // Handle cases where value is null/undef or number
-          return ret == null ? "" : ret;
-
-        } else {
-/*          
-            if (/input|textarea/i.test(elm.tagName)) {
-              elm.value = value;
-            } else {
-              text(elm,value);
-            }
-            return this;
-*/
-          // Treat null/undefined as ""; convert numbers to string
-          if ( value == null ) {
-            value = "";
-
-          } else if ( typeof value === "number" ) {
-            value += "";
-
-          } else if ( langx.isArray( value ) ) {
-            value = langx.map( value, function( value1 ) {
-              return value1 == null ? "" : value1 + "";
-            } );
-          }
-
-          // If set returns undefined, fall back to normal setting
-          if ( !hooks || !( "set" in hooks ) || hooks.set( elm, value, "value" ) === undefined ) {
-            elm.value = value;
-          }
-        }      
-    }
-
-
-    finder.pseudos.data = function( elem, i, match,dataName ) {
-        return !!data( elem, dataName || match[3]);
-    };
-   
-
-    function datax() {
-        return datax;
-    }
-
-    langx.mixin(datax, {
-        aria: aria,
-
-        attr: attr,
-
-        cleanData: cleanData,
-
-        data: data,
-
-        pluck: pluck,
-
-        prop: prop,
-
-        removeAttr: removeAttr,
-
-        removeData: removeData,
-
-        removeProp: removeProp,
-
-        text: text,
-
-        val: val,
-
-        valHooks : valHooks
-    });
-
-    return skylark.attach("domx.data", datax);
-});
 define('skylark-domx-query/query',[
     "skylark-langx/skylark",
     "skylark-langx/langx",
@@ -7024,6 +6607,448 @@ define('skylark-domx-query/main',[
 });
 define('skylark-domx-query', ['skylark-domx-query/main'], function (main) { return main; });
 
+define('skylark-domx-data/data',[
+    "skylark-langx/skylark",
+    "skylark-langx/langx",
+    "skylark-domx-finder",
+    "skylark-domx-noder"
+], function(skylark, langx, finder,noder) {
+    var map = Array.prototype.map,
+        filter = Array.prototype.filter,
+        camelCase = langx.camelCase,
+        deserializeValue = langx.deserializeValue,
+
+        capitalRE = /([A-Z])/g,
+        propMap = {
+            'tabindex': 'tabIndex',
+            'readonly': 'readOnly',
+            'for': 'htmlFor',
+            'class': 'className',
+            'maxlength': 'maxLength',
+            'cellspacing': 'cellSpacing',
+            'cellpadding': 'cellPadding',
+            'rowspan': 'rowSpan',
+            'colspan': 'colSpan',
+            'usemap': 'useMap',
+            'frameborder': 'frameBorder',
+            'contenteditable': 'contentEditable'
+        };
+
+    // Strip and collapse whitespace according to HTML spec
+    function stripAndCollapse( value ) {
+      var tokens = value.match( /[^\x20\t\r\n\f]+/g ) || [];
+      return tokens.join( " " );
+    }
+
+
+    var valHooks = {
+      option: {
+        get: function( elem ) {
+          var val = elem.getAttribute( "value" );
+          return val != null ?  val :  stripAndCollapse(text( elem ) );
+        }
+      },
+      select: {
+        get: function( elem ) {
+          var value, option, i,
+            options = elem.options,
+            index = elem.selectedIndex,
+            one = elem.type === "select-one",
+            values = one ? null : [],
+            max = one ? index + 1 : options.length;
+
+          if ( index < 0 ) {
+            i = max;
+
+          } else {
+            i = one ? index : 0;
+          }
+
+          // Loop through all the selected options
+          for ( ; i < max; i++ ) {
+            option = options[ i ];
+
+            if ( option.selected &&
+
+                // Don't return options that are disabled or in a disabled optgroup
+                !option.disabled &&
+                ( !option.parentNode.disabled ||
+                  !noder.nodeName( option.parentNode, "optgroup" ) ) ) {
+
+              // Get the specific value for the option
+              value = val(option);
+
+              // We don't need an array for one selects
+              if ( one ) {
+                return value;
+              }
+
+              // Multi-Selects return an array
+              values.push( value );
+            }
+          }
+
+          return values;
+        },
+
+        set: function( elem, value ) {
+          var optionSet, option,
+            options = elem.options,
+            values = langx.makeArray( value ),
+            i = options.length;
+
+          while ( i-- ) {
+            option = options[ i ];
+
+            /* eslint-disable no-cond-assign */
+
+            if ( option.selected =
+              langx.inArray( valHooks.option.get( option ), values ) > -1
+            ) {
+              optionSet = true;
+            }
+
+            /* eslint-enable no-cond-assign */
+          }
+
+          // Force browsers to behave consistently when non-matching value is set
+          if ( !optionSet ) {
+            elem.selectedIndex = -1;
+          }
+          return values;
+        }
+      }
+    };
+
+
+    // Radios and checkboxes getter/setter
+    langx.each( [ "radio", "checkbox" ], function() {
+      valHooks[ this ] = {
+        set: function( elem, value ) {
+          if ( langx.isArray( value ) ) {
+            return ( elem.checked = langx.inArray( val(elem), value ) > -1 );
+          }
+        }
+      };
+    });
+
+
+
+    /*
+     * Set property values
+     * @param {Object} elm  
+     * @param {String} name
+     * @param {String} value
+     */
+
+    function setAttribute(elm, name, value) {
+        if (value == null) {
+            elm.removeAttribute(name);
+        } else {
+            elm.setAttribute(name, value);
+        }
+    }
+
+    function aria(elm, name, value) {
+        return this.attr(elm, "aria-" + name, value);
+    }
+
+    /*
+     * Set property values
+     * @param {Object} elm  
+     * @param {String} name
+     * @param {String} value
+     */
+
+    function attr(elm, name, value) {
+        if (value === undefined) {
+            if (typeof name === "object") {
+                for (var attrName in name) {
+                    attr(elm, attrName, name[attrName]);
+                }
+                return this;
+            } else {
+                return elm.getAttribute ? elm.getAttribute(name) : elm[name];
+            }
+        } else {
+            elm.setAttribute ? elm.setAttribute(name, value) : elm[name] = value;
+            return this;
+        }
+    }
+
+
+    /*
+     *  Read all "data-*" attributes from a node
+     * @param {Object} elm  
+     */
+
+    function _attributeData(elm) {
+        var store = {}
+        langx.each(elm.attributes || [], function(i, attr) {
+            if (attr.name.indexOf('data-') == 0) {
+                store[camelCase(attr.name.replace('data-', ''))] = deserializeValue(attr.value);
+            }
+        })
+        return store;
+    }
+
+    function _store(elm, confirm) {
+        var store = elm["_$_store"];
+        if (!store && confirm) {
+            store = elm["_$_store"] = _attributeData(elm);
+        }
+        return store;
+    }
+
+    function _getData(elm, name) {
+        if (name === undefined) {
+            return _store(elm, true);
+        } else {
+            var store = _store(elm);
+            if (store) {
+                if (name in store) {
+                    return store[name];
+                }
+                var camelName = camelCase(name);
+                if (camelName in store) {
+                    return store[camelName];
+                }
+            }
+            var attrName = 'data-' + name.replace(capitalRE, "-$1").toLowerCase()
+            return attr(elm, attrName);
+        }
+
+    }
+
+    function _setData(elm, name, value) {
+        var store = _store(elm, true);
+        store[camelCase(name)] = value;
+    }
+
+
+    /*
+     * xxx
+     * @param {Object} elm  
+     * @param {String} name
+     * @param {String} value
+     */
+    function data(elm, name, value) {
+
+        if (value === undefined) {
+            if (typeof name === "object") {
+                for (var dataAttrName in name) {
+                    _setData(elm, dataAttrName, name[dataAttrName]);
+                }
+                return this;
+            } else {
+                return _getData(elm, name);
+            }
+        } else {
+            _setData(elm, name, value);
+            return this;
+        }
+    } 
+    /*
+     * Remove from the element all items that have not yet been run. 
+     * @param {Object} elm  
+     */
+
+    function cleanData(elm) {
+        if (elm["_$_store"]) {
+            delete elm["_$_store"];
+        }
+    }
+
+    /*
+     * Remove a previously-stored piece of data. 
+     * @param {Object} elm  
+     * @param {Array} names
+     */
+    function removeData(elm, names) {
+        if (names) {
+            if (langx.isString(names)) {
+                names = names.split(/\s+/);
+            }
+            var store = _store(elm, true);
+            names.forEach(function(name) {
+                delete store[name];
+            });            
+        } else {
+            cleanData(elm);
+        }
+        return this;
+    }
+
+    /*
+     * xxx 
+     * @param {Object} elm  
+     * @param {Array} names
+     */
+    function pluck(nodes, property) {
+        return map.call(nodes, function(elm) {
+            return elm[property];
+        });
+    }
+
+    /*
+     * Get or set the value of an property for the specified element.
+     * @param {Object} elm  
+     * @param {String} name
+     * @param {String} value
+     */
+    function prop(elm, name, value) {
+        name = propMap[name] || name;
+        if (value === undefined) {
+            return elm[name];
+        } else {
+            elm[name] = value;
+            return this;
+        }
+    }
+
+    /*
+     * remove Attributes  
+     * @param {Object} elm  
+     * @param {String} name
+     */
+    function removeAttr(elm, name) {
+        name.split(' ').forEach(function(attr) {
+            setAttribute(elm, attr);
+        });
+        return this;
+    }
+
+
+    /*
+     * Remove the value of a property for the first element in the set of matched elements or set one or more properties for every matched element.
+     * @param {Object} elm  
+     * @param {String} name
+     */
+    function removeProp(elm, name) {
+        name.split(' ').forEach(function(prop) {
+            delete elm[prop];
+        });
+        return this;
+    }
+
+    /*   
+     * Get the combined text contents of each element in the set of matched elements, including their descendants, or set the text contents of the matched elements.  
+     * @param {Object} elm  
+     * @param {String} txt
+     */
+    function text(elm, txt) {
+        if (txt === undefined) {
+            return elm.textContent;
+        } else {
+            elm.textContent = txt == null ? '' : '' + txt;
+            return this;
+        }
+    }
+
+    /*   
+     * Get the current value of the first element in the set of matched elements or set the value of every matched element.
+     * @param {Object} elm  
+     * @param {String} value
+     */
+    function val(elm, value) {
+        var hooks = valHooks[ elm.type ] || valHooks[ elm.nodeName.toLowerCase() ];
+        if (value === undefined) {
+/*
+            if (elm.multiple) {
+                // select multiple values
+                var selectedOptions = filter.call(finder.find(elm, "option"), (function(option) {
+                    return option.selected;
+                }));
+                return pluck(selectedOptions, "value");
+            } else {
+                if (/input|textarea/i.test(elm.tagName)) {
+                  return elm.value;
+                }
+                return text(elm);
+            }
+*/
+
+          if ( hooks &&  "get" in hooks &&  ( ret = hooks.get( elm, "value" ) ) !== undefined ) {
+            return ret;
+          }
+
+          ret = elm.value;
+
+          // Handle most common string cases
+          if ( typeof ret === "string" ) {
+            return ret.replace( /\r/g, "" );
+          }
+
+          // Handle cases where value is null/undef or number
+          return ret == null ? "" : ret;
+
+        } else {
+/*          
+            if (/input|textarea/i.test(elm.tagName)) {
+              elm.value = value;
+            } else {
+              text(elm,value);
+            }
+            return this;
+*/
+          // Treat null/undefined as ""; convert numbers to string
+          if ( value == null ) {
+            value = "";
+
+          } else if ( typeof value === "number" ) {
+            value += "";
+
+          } else if ( langx.isArray( value ) ) {
+            value = langx.map( value, function( value1 ) {
+              return value1 == null ? "" : value1 + "";
+            } );
+          }
+
+          // If set returns undefined, fall back to normal setting
+          if ( !hooks || !( "set" in hooks ) || hooks.set( elm, value, "value" ) === undefined ) {
+            elm.value = value;
+          }
+        }      
+    }
+
+
+    finder.pseudos.data = function( elem, i, match,dataName ) {
+        return !!data( elem, dataName || match[3]);
+    };
+   
+
+    function datax() {
+        return datax;
+    }
+
+    langx.mixin(datax, {
+        aria: aria,
+
+        attr: attr,
+
+        cleanData: cleanData,
+
+        data: data,
+
+        pluck: pluck,
+
+        prop: prop,
+
+        removeAttr: removeAttr,
+
+        removeData: removeData,
+
+        removeProp: removeProp,
+
+        text: text,
+
+        val: val,
+
+        valHooks : valHooks
+    });
+
+    return skylark.attach("domx.data", datax);
+});
 define('skylark-domx-velm/velm',[
     "skylark-langx/skylark",
     "skylark-langx/langx",
@@ -8018,1205 +8043,6 @@ define('skylark-domx-eventer/main',[
 });
 define('skylark-domx-eventer', ['skylark-domx-eventer/main'], function (main) { return main; });
 
-define('skylark-data-color/colors',[
-    "skylark-langx/skylark",
-    "skylark-langx/langx"
-],function(skylark,langx) {
-    /*
-     * This module uses the following open source code:
-     *   TinyColor v1.1.2
-     *     https://github.com/bgrins/TinyColor
-     *     Brian Grinstead, MIT License
-     */
-
-    var colors = skylark.colors =  skylark.colors || {};
-
-    var trimLeft = /^[\s,#]+/,
-        trimRight = /\s+$/,
-        math = Math,
-        mathRound = math.round,
-        mathMin = math.min,
-        mathMax = math.max,
-        mathRandom = math.random;
-
-
-     // Big List of Colors
-    // ------------------
-    // <http://www.w3.org/TR/css3-color/#svg-color>
-    var names = colors.names = {
-        aliceblue: "f0f8ff",
-        antiquewhite: "faebd7",
-        aqua: "0ff",
-        aquamarine: "7fffd4",
-        azure: "f0ffff",
-        beige: "f5f5dc",
-        bisque: "ffe4c4",
-        black: "000",
-        blanchedalmond: "ffebcd",
-        blue: "00f",
-        blueviolet: "8a2be2",
-        brown: "a52a2a",
-        burlywood: "deb887",
-        burntsienna: "ea7e5d",
-        cadetblue: "5f9ea0",
-        chartreuse: "7fff00",
-        chocolate: "d2691e",
-        coral: "ff7f50",
-        cornflowerblue: "6495ed",
-        cornsilk: "fff8dc",
-        crimson: "dc143c",
-        cyan: "0ff",
-        darkblue: "00008b",
-        darkcyan: "008b8b",
-        darkgoldenrod: "b8860b",
-        darkgray: "a9a9a9",
-        darkgreen: "006400",
-        darkgrey: "a9a9a9",
-        darkkhaki: "bdb76b",
-        darkmagenta: "8b008b",
-        darkolivegreen: "556b2f",
-        darkorange: "ff8c00",
-        darkorchid: "9932cc",
-        darkred: "8b0000",
-        darksalmon: "e9967a",
-        darkseagreen: "8fbc8f",
-        darkslateblue: "483d8b",
-        darkslategray: "2f4f4f",
-        darkslategrey: "2f4f4f",
-        darkturquoise: "00ced1",
-        darkviolet: "9400d3",
-        deeppink: "ff1493",
-        deepskyblue: "00bfff",
-        dimgray: "696969",
-        dimgrey: "696969",
-        dodgerblue: "1e90ff",
-        firebrick: "b22222",
-        floralwhite: "fffaf0",
-        forestgreen: "228b22",
-        fuchsia: "f0f",
-        gainsboro: "dcdcdc",
-        ghostwhite: "f8f8ff",
-        gold: "ffd700",
-        goldenrod: "daa520",
-        gray: "808080",
-        green: "008000",
-        greenyellow: "adff2f",
-        grey: "808080",
-        honeydew: "f0fff0",
-        hotpink: "ff69b4",
-        indianred: "cd5c5c",
-        indigo: "4b0082",
-        ivory: "fffff0",
-        khaki: "f0e68c",
-        lavender: "e6e6fa",
-        lavenderblush: "fff0f5",
-        lawngreen: "7cfc00",
-        lemonchiffon: "fffacd",
-        lightblue: "add8e6",
-        lightcoral: "f08080",
-        lightcyan: "e0ffff",
-        lightgoldenrodyellow: "fafad2",
-        lightgray: "d3d3d3",
-        lightgreen: "90ee90",
-        lightgrey: "d3d3d3",
-        lightpink: "ffb6c1",
-        lightsalmon: "ffa07a",
-        lightseagreen: "20b2aa",
-        lightskyblue: "87cefa",
-        lightslategray: "789",
-        lightslategrey: "789",
-        lightsteelblue: "b0c4de",
-        lightyellow: "ffffe0",
-        lime: "0f0",
-        limegreen: "32cd32",
-        linen: "faf0e6",
-        magenta: "f0f",
-        maroon: "800000",
-        mediumaquamarine: "66cdaa",
-        mediumblue: "0000cd",
-        mediumorchid: "ba55d3",
-        mediumpurple: "9370db",
-        mediumseagreen: "3cb371",
-        mediumslateblue: "7b68ee",
-        mediumspringgreen: "00fa9a",
-        mediumturquoise: "48d1cc",
-        mediumvioletred: "c71585",
-        midnightblue: "191970",
-        mintcream: "f5fffa",
-        mistyrose: "ffe4e1",
-        moccasin: "ffe4b5",
-        navajowhite: "ffdead",
-        navy: "000080",
-        oldlace: "fdf5e6",
-        olive: "808000",
-        olivedrab: "6b8e23",
-        orange: "ffa500",
-        orangered: "ff4500",
-        orchid: "da70d6",
-        palegoldenrod: "eee8aa",
-        palegreen: "98fb98",
-        paleturquoise: "afeeee",
-        palevioletred: "db7093",
-        papayawhip: "ffefd5",
-        peachpuff: "ffdab9",
-        peru: "cd853f",
-        pink: "ffc0cb",
-        plum: "dda0dd",
-        powderblue: "b0e0e6",
-        purple: "800080",
-        rebeccapurple: "663399",
-        red: "f00",
-        rosybrown: "bc8f8f",
-        royalblue: "4169e1",
-        saddlebrown: "8b4513",
-        salmon: "fa8072",
-        sandybrown: "f4a460",
-        seagreen: "2e8b57",
-        seashell: "fff5ee",
-        sienna: "a0522d",
-        silver: "c0c0c0",
-        skyblue: "87ceeb",
-        slateblue: "6a5acd",
-        slategray: "708090",
-        slategrey: "708090",
-        snow: "fffafa",
-        springgreen: "00ff7f",
-        steelblue: "4682b4",
-        tan: "d2b48c",
-        teal: "008080",
-        thistle: "d8bfd8",
-        tomato: "ff6347",
-        turquoise: "40e0d0",
-        violet: "ee82ee",
-        wheat: "f5deb3",
-        white: "fff",
-        whitesmoke: "f5f5f5",
-        yellow: "ff0",
-        yellowgreen: "9acd32"
-    };
-
-    // Make it easy to access colors via `hexNames[hex]`
-    var hexNames = colors.hexNames = flip(names);
-
-
-    // Utilities
-    // ---------
-
-    // `{ 'name1': 'val1' }` becomes `{ 'val1': 'name1' }`
-    function flip(o) {
-        var flipped = { };
-        for (var i in o) {
-            if (o.hasOwnProperty(i)) {
-                flipped[o[i]] = i;
-            }
-        }
-        return flipped;
-    }
-       
-
-
-    // Given a string or object, convert that input to RGB
-    // Possible string inputs:
-    //
-    //     "red"
-    //     "#f00" or "f00"
-    //     "#ff0000" or "ff0000"
-    //     "#ff000000" or "ff000000"
-    //     "rgb 255 0 0" or "rgb (255, 0, 0)"
-    //     "rgb 1.0 0 0" or "rgb (1, 0, 0)"
-    //     "rgba (255, 0, 0, 1)" or "rgba 255, 0, 0, 1"
-    //     "rgba (1.0, 0, 0, 1)" or "rgba 1.0, 0, 0, 1"
-    //     "hsl(0, 100%, 50%)" or "hsl 0 100% 50%"
-    //     "hsla(0, 100%, 50%, 1)" or "hsla 0 100% 50%, 1"
-    //     "hsv(0, 100%, 100%)" or "hsv 0 100% 100%"
-    //
-    function inputToRGB(color) {
-
-        var rgb = { r: 0, g: 0, b: 0 };
-        var a = 1;
-        var ok = false;
-        var format = false;
-
-        if (typeof color == "string") {
-            color = stringInputToObject(color);
-        }
-
-        if (typeof color == "object") {
-            if (color.hasOwnProperty("r") && color.hasOwnProperty("g") && color.hasOwnProperty("b")) {
-                rgb = rgbToRgb(color.r, color.g, color.b);
-                ok = true;
-                format = String(color.r).substr(-1) === "%" ? "prgb" : "rgb";
-            }
-            else if (color.hasOwnProperty("h") && color.hasOwnProperty("s") && color.hasOwnProperty("v")) {
-                color.s = convertToPercentage(color.s);
-                color.v = convertToPercentage(color.v);
-                rgb = hsvToRgb(color.h, color.s, color.v);
-                ok = true;
-                format = "hsv";
-            }
-            else if (color.hasOwnProperty("h") && color.hasOwnProperty("s") && color.hasOwnProperty("l")) {
-                color.s = convertToPercentage(color.s);
-                color.l = convertToPercentage(color.l);
-                rgb = hslToRgb(color.h, color.s, color.l);
-                ok = true;
-                format = "hsl";
-            }
-
-            if (color.hasOwnProperty("a")) {
-                a = color.a;
-            }
-        }
-
-        a = boundAlpha(a);
-
-        return {
-            ok: ok,
-            format: color.format || format,
-            r: mathMin(255, mathMax(rgb.r, 0)),
-            g: mathMin(255, mathMax(rgb.g, 0)),
-            b: mathMin(255, mathMax(rgb.b, 0)),
-            a: a
-        };
-    }
-
-
-    // Conversion Functions
-    // --------------------
-
-    // `rgbToHsl`, `rgbToHsv`, `hslToRgb`, `hsvToRgb` modified from:
-    // <http://mjijackson.com/2008/02/rgb-to-hsl-and-rgb-to-hsv-color-model-conversion-algorithms-in-javascript>
-
-    // `rgbToRgb`
-    // Handle bounds / percentage checking to conform to CSS color spec
-    // <http://www.w3.org/TR/css3-color/>
-    // *Assumes:* r, g, b in [0, 255] or [0, 1]
-    // *Returns:* { r, g, b } in [0, 255]
-    function rgbToRgb(r, g, b){
-        return {
-            r: bound01(r, 255) * 255,
-            g: bound01(g, 255) * 255,
-            b: bound01(b, 255) * 255
-        };
-    }
-
-    // `rgbToHsl`
-    // Converts an RGB color value to HSL.
-    // *Assumes:* r, g, and b are contained in [0, 255] or [0, 1]
-    // *Returns:* { h, s, l } in [0,1]
-    function rgbToHsl(r, g, b) {
-
-        r = bound01(r, 255);
-        g = bound01(g, 255);
-        b = bound01(b, 255);
-
-        var max = mathMax(r, g, b), min = mathMin(r, g, b);
-        var h, s, l = (max + min) / 2;
-
-        if(max == min) {
-            h = s = 0; // achromatic
-        }
-        else {
-            var d = max - min;
-            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-            switch(max) {
-                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-                case g: h = (b - r) / d + 2; break;
-                case b: h = (r - g) / d + 4; break;
-            }
-
-            h /= 6;
-        }
-
-        return { h: h, s: s, l: l };
-    }
-
-    // `hslToRgb`
-    // Converts an HSL color value to RGB.
-    // *Assumes:* h is contained in [0, 1] or [0, 360] and s and l are contained [0, 1] or [0, 100]
-    // *Returns:* { r, g, b } in the set [0, 255]
-    function hslToRgb(h, s, l) {
-        var r, g, b;
-
-        h = bound01(h, 360);
-        s = bound01(s, 100);
-        l = bound01(l, 100);
-
-        function hue2rgb(p, q, t) {
-            if(t < 0) t += 1;
-            if(t > 1) t -= 1;
-            if(t < 1/6) return p + (q - p) * 6 * t;
-            if(t < 1/2) return q;
-            if(t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-            return p;
-        }
-
-        if(s === 0) {
-            r = g = b = l; // achromatic
-        }
-        else {
-            var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-            var p = 2 * l - q;
-            r = hue2rgb(p, q, h + 1/3);
-            g = hue2rgb(p, q, h);
-            b = hue2rgb(p, q, h - 1/3);
-        }
-
-        return { r: r * 255, g: g * 255, b: b * 255 };
-    }
-
-    // `rgbToHsv`
-    // Converts an RGB color value to HSV
-    // *Assumes:* r, g, and b are contained in the set [0, 255] or [0, 1]
-    // *Returns:* { h, s, v } in [0,1]
-    function rgbToHsv(r, g, b) {
-
-        r = bound01(r, 255);
-        g = bound01(g, 255);
-        b = bound01(b, 255);
-
-        var max = mathMax(r, g, b), min = mathMin(r, g, b);
-        var h, s, v = max;
-
-        var d = max - min;
-        s = max === 0 ? 0 : d / max;
-
-        if(max == min) {
-            h = 0; // achromatic
-        }
-        else {
-            switch(max) {
-                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-                case g: h = (b - r) / d + 2; break;
-                case b: h = (r - g) / d + 4; break;
-            }
-            h /= 6;
-        }
-        return { h: h, s: s, v: v };
-    }
-
-    // `hsvToRgb`
-    // Converts an HSV color value to RGB.
-    // *Assumes:* h is contained in [0, 1] or [0, 360] and s and v are contained in [0, 1] or [0, 100]
-    // *Returns:* { r, g, b } in the set [0, 255]
-     function hsvToRgb(h, s, v) {
-
-        h = bound01(h, 360) * 6;
-        s = bound01(s, 100);
-        v = bound01(v, 100);
-
-        var i = math.floor(h),
-            f = h - i,
-            p = v * (1 - s),
-            q = v * (1 - f * s),
-            t = v * (1 - (1 - f) * s),
-            mod = i % 6,
-            r = [v, q, p, p, t, v][mod],
-            g = [t, v, v, q, p, p][mod],
-            b = [p, p, t, v, v, q][mod];
-
-        return { r: r * 255, g: g * 255, b: b * 255 };
-    }
-
-    // `rgbToHex`
-    // Converts an RGB color to hex
-    // Assumes r, g, and b are contained in the set [0, 255]
-    // Returns a 3 or 6 character hex
-    function rgbToHex(r, g, b, allow3Char) {
-
-        var hex = [
-            pad2(mathRound(r).toString(16)),
-            pad2(mathRound(g).toString(16)),
-            pad2(mathRound(b).toString(16))
-        ];
-
-        // Return a 3 character hex if possible
-        if (allow3Char && hex[0].charAt(0) == hex[0].charAt(1) && hex[1].charAt(0) == hex[1].charAt(1) && hex[2].charAt(0) == hex[2].charAt(1)) {
-            return hex[0].charAt(0) + hex[1].charAt(0) + hex[2].charAt(0);
-        }
-
-        return hex.join("");
-    }
-
-    // `rgbaToHex`
-    // Converts an RGBA color plus alpha transparency to hex
-    // Assumes r, g, b and a are contained in the set [0, 255]
-    // Returns an 8 character hex
-    function rgbaToHex(r, g, b, a) {
-
-        var hex = [
-            pad2(convertDecimalToHex(a)),
-            pad2(mathRound(r).toString(16)),
-            pad2(mathRound(g).toString(16)),
-            pad2(mathRound(b).toString(16))
-        ];
-
-        return hex.join("");
-    }
-
-
-
-    // Return a valid alpha value [0,1] with all invalid values being set to 1
-    function boundAlpha(a) {
-        a = parseFloat(a);
-
-        if (isNaN(a) || a < 0 || a > 1) {
-            a = 1;
-        }
-
-        return a;
-    }
-
-    // Take input from [0, n] and return it as [0, 1]
-    function bound01(n, max) {
-        if (isOnePointZero(n)) { n = "100%"; }
-
-        var processPercent = isPercentage(n);
-        n = mathMin(max, mathMax(0, parseFloat(n)));
-
-        // Automatically convert percentage into number
-        if (processPercent) {
-            n = parseInt(n * max, 10) / 100;
-        }
-
-        // Handle floating point rounding errors
-        if ((math.abs(n - max) < 0.000001)) {
-            return 1;
-        }
-
-        // Convert into [0, 1] range if it isn't already
-        return (n % max) / parseFloat(max);
-    }
-
-    // Force a number between 0 and 1
-    function clamp01(val) {
-        return mathMin(1, mathMax(0, val));
-    }
-
-    // Parse a base-16 hex value into a base-10 integer
-    function parseIntFromHex(val) {
-        return parseInt(val, 16);
-    }
-
-    // Need to handle 1.0 as 100%, since once it is a number, there is no difference between it and 1
-    // <http://stackoverflow.com/questions/7422072/javascript-how-to-detect-number-as-a-decimal-including-1-0>
-    function isOnePointZero(n) {
-        return typeof n == "string" && n.indexOf('.') != -1 && parseFloat(n) === 1;
-    }
-
-    // Check to see if string passed in is a percentage
-    function isPercentage(n) {
-        return typeof n === "string" && n.indexOf('%') != -1;
-    }
-
-    // Force a hex value to have 2 characters
-    function pad2(c) {
-        return c.length == 1 ? '0' + c : '' + c;
-    }
-
-    // Replace a decimal with it's percentage value
-    function convertToPercentage(n) {
-        if (n <= 1) {
-            n = (n * 100) + "%";
-        }
-
-        return n;
-    }
-
-    // Converts a decimal to a hex value
-    function convertDecimalToHex(d) {
-        return Math.round(parseFloat(d) * 255).toString(16);
-    }
-    // Converts a hex value to a decimal
-    function convertHexToDecimal(h) {
-        return (parseIntFromHex(h) / 255);
-    }
-
-    var matchers = (function() {
-
-        // <http://www.w3.org/TR/css3-values/#integers>
-        var CSS_INTEGER = "[-\\+]?\\d+%?";
-
-        // <http://www.w3.org/TR/css3-values/#number-value>
-        var CSS_NUMBER = "[-\\+]?\\d*\\.\\d+%?";
-
-        // Allow positive/negative integer/number.  Don't capture the either/or, just the entire outcome.
-        var CSS_UNIT = "(?:" + CSS_NUMBER + ")|(?:" + CSS_INTEGER + ")";
-
-        // Actual matching.
-        // Parentheses and commas are optional, but not required.
-        // Whitespace can take the place of commas or opening paren
-        var PERMISSIVE_MATCH3 = "[\\s|\\(]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")\\s*\\)?";
-        var PERMISSIVE_MATCH4 = "[\\s|\\(]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")\\s*\\)?";
-
-        return {
-            rgb: new RegExp("rgb" + PERMISSIVE_MATCH3),
-            rgba: new RegExp("rgba" + PERMISSIVE_MATCH4),
-            hsl: new RegExp("hsl" + PERMISSIVE_MATCH3),
-            hsla: new RegExp("hsla" + PERMISSIVE_MATCH4),
-            hsv: new RegExp("hsv" + PERMISSIVE_MATCH3),
-            hsva: new RegExp("hsva" + PERMISSIVE_MATCH4),
-            hex3: /^([0-9a-fA-F]{1})([0-9a-fA-F]{1})([0-9a-fA-F]{1})$/,
-            hex6: /^([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/,
-            hex8: /^([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/
-        };
-    })();
-
-    // `stringInputToObject`
-    // Permissive string parsing.  Take in a number of formats, and output an object
-    // based on detected format.  Returns `{ r, g, b }` or `{ h, s, l }` or `{ h, s, v}`
-    function stringInputToObject(color) {
-
-        color = color.replace(trimLeft,'').replace(trimRight, '').toLowerCase();
-        var named = false;
-        if (names[color]) {
-            color = names[color];
-            named = true;
-        }
-        else if (color == 'transparent') {
-            return { r: 0, g: 0, b: 0, a: 0, format: "name" };
-        }
-
-        // Try to match string input using regular expressions.
-        // Keep most of the number bounding out of this function - don't worry about [0,1] or [0,100] or [0,360]
-        // Just return an object and let the conversion functions handle that.
-        // This way the result will be the same whether the tinycolor is initialized with string or object.
-        var match;
-        if ((match = matchers.rgb.exec(color))) {
-            return { r: match[1], g: match[2], b: match[3] };
-        }
-        if ((match = matchers.rgba.exec(color))) {
-            return { r: match[1], g: match[2], b: match[3], a: match[4] };
-        }
-        if ((match = matchers.hsl.exec(color))) {
-            return { h: match[1], s: match[2], l: match[3] };
-        }
-        if ((match = matchers.hsla.exec(color))) {
-            return { h: match[1], s: match[2], l: match[3], a: match[4] };
-        }
-        if ((match = matchers.hsv.exec(color))) {
-            return { h: match[1], s: match[2], v: match[3] };
-        }
-        if ((match = matchers.hsva.exec(color))) {
-            return { h: match[1], s: match[2], v: match[3], a: match[4] };
-        }
-        if ((match = matchers.hex8.exec(color))) {
-            return {
-                a: convertHexToDecimal(match[1]),
-                r: parseIntFromHex(match[2]),
-                g: parseIntFromHex(match[3]),
-                b: parseIntFromHex(match[4]),
-                format: named ? "name" : "hex8"
-            };
-        }
-        if ((match = matchers.hex6.exec(color))) {
-            return {
-                r: parseIntFromHex(match[1]),
-                g: parseIntFromHex(match[2]),
-                b: parseIntFromHex(match[3]),
-                format: named ? "name" : "hex"
-            };
-        }
-        if ((match = matchers.hex3.exec(color))) {
-            return {
-                r: parseIntFromHex(match[1] + '' + match[1]),
-                g: parseIntFromHex(match[2] + '' + match[2]),
-                b: parseIntFromHex(match[3] + '' + match[3]),
-                format: named ? "name" : "hex"
-            };
-        }
-
-        return false;
-    }
-
-    langx.mixin(colors,{
-        inputToRGB : inputToRGB,
-        rgbToRgb : rgbToRgb,
-        rgbToHsl : rgbToHsl,
-        hslToRgb : hslToRgb,
-        rgbToHsv : rgbToHsv,
-        rgbToHex : rgbToHex,
-        rgbaToHex : rgbaToHex,
-        boundAlpha : boundAlpha,
-        bound01 : bound01,
-        clamp01 : clamp01,
-        parseIntFromHex : parseIntFromHex,
-        isOnePointZero : isOnePointZero,
-        isPercentage : isPercentage,
-        pad2 : pad2,
-        convertToPercentage : convertToPercentage,
-        convertHexToDecimal : convertHexToDecimal,
-        stringInputToObject : stringInputToObject
-
-    });
-
-    return skylark.attach("data.colors",colors);
-
-});
-
-define('skylark-data-color/Color',[
-    "skylark-langx/langx",
-    "./colors"
-],function(langx,colors) {
-    /*
-     * This module uses the following open source code:
-     *   TinyColor v1.1.2
-     *     https://github.com/bgrins/TinyColor
-     *     Brian Grinstead, MIT License
-     */
-
-    var inputToRGB = colors.inputToRGB,
-        rgbToRgb = colors.rgbToRgb,
-        rgbToHsl = colors.rgbToHsl,
-        hslToRgb = colors.hslToRgb,
-        rgbToHsv = colors.rgbToHsv,
-        rgbToHex = colors.rgbToHex,
-        rgbaToHex = colors.rgbaToHex,
-        boundAlpha = colors.boundAlpha,
-        bound01 = colors.bound01,
-        clamp01 = colors.clamp01,
-        parseIntFromHex = colors.parseIntFromHex,
-        isOnePointZero = colors.isOnePointZero,
-        isPercentage = colors.isPercentage,
-        pad2 = colors.pad2,
-        convertToPercentage = colors.convertToPercentage,
-        convertHexToDecimal = colors.convertHexToDecimal,
-        stringInputToObject = colors.stringInputToObject,
-        hexNames = colors.hexNames;
-
-    var tinyCounter = 0,
-        math = Math,
-        mathRound = math.round,
-        mathMin = math.min,
-        mathMax = math.max,
-        mathRandom = math.random;
-
-	var Color = colors.Color = langx.klass({
-		init : function(color, opts) {
-	        color = (color) ? color : '';
-    	    opts = opts || { };
-
-	        // If input is already a Color, return itself
-	        if (color instanceof Color) {
-	           return color;
-	        }
-
-	        var rgb = inputToRGB(color);
-	        this._originalInput = color,
-	        this._r = rgb.r,
-	        this._g = rgb.g,
-	        this._b = rgb.b,
-	        this._a = rgb.a,
-	        this._roundA = mathRound(1000 * this._a) / 1000,
-	        this._format = opts.format || rgb.format;
-	        this._gradientType = opts.gradientType;
-
-	        // Don't let the range of [0,255] come back in [0,1].
-	        // Potentially lose a little bit of precision here, but will fix issues where
-	        // .5 gets interpreted as half of the total, instead of half of 1
-	        // If it was supposed to be 128, this was already taken care of by `inputToRgb`
-	        if (this._r < 1) { this._r = mathRound(this._r); }
-	        if (this._g < 1) { this._g = mathRound(this._g); }
-	        if (this._b < 1) { this._b = mathRound(this._b); }
-
-	        this._ok = rgb.ok;
-	        this._tc_id = tinyCounter++;
-	    },
-
-        isDark: function() {
-            return this.getBrightness() < 128;
-        },
-        isLight: function() {
-            return !this.isDark();
-        },
-        isValid: function() {
-            return this._ok;
-        },
-        getOriginalInput: function() {
-          return this._originalInput;
-        },
-        getFormat: function() {
-            return this._format;
-        },
-        getAlpha: function() {
-            return this._a;
-        },
-        getBrightness: function() {
-            var rgb = this.toRgb();
-            return (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-        },
-        setAlpha: function(value) {
-            this._a = boundAlpha(value);
-            this._roundA = mathRound(1000 * this._a) / 1000;
-            return this;
-        },
-        toHsv: function() {
-            var hsv = rgbToHsv(this._r, this._g, this._b);
-            return { h: hsv.h * 360, s: hsv.s, v: hsv.v, a: this._a };
-        },
-        toHsvString: function() {
-            var hsv = rgbToHsv(this._r, this._g, this._b);
-            var h = mathRound(hsv.h * 360), s = mathRound(hsv.s * 100), v = mathRound(hsv.v * 100);
-            return (this._a == 1) ?
-              "hsv("  + h + ", " + s + "%, " + v + "%)" :
-              "hsva(" + h + ", " + s + "%, " + v + "%, "+ this._roundA + ")";
-        },
-        toHsl: function() {
-            var hsl = rgbToHsl(this._r, this._g, this._b);
-            return { h: hsl.h * 360, s: hsl.s, l: hsl.l, a: this._a };
-        },
-        toHslString: function() {
-            var hsl = rgbToHsl(this._r, this._g, this._b);
-            var h = mathRound(hsl.h * 360), s = mathRound(hsl.s * 100), l = mathRound(hsl.l * 100);
-            return (this._a == 1) ?
-              "hsl("  + h + ", " + s + "%, " + l + "%)" :
-              "hsla(" + h + ", " + s + "%, " + l + "%, "+ this._roundA + ")";
-        },
-        toHex: function(allow3Char) {
-            return rgbToHex(this._r, this._g, this._b, allow3Char);
-        },
-        toHexString: function(allow3Char) {
-            return '#' + this.toHex(allow3Char);
-        },
-        toHex8: function() {
-            return rgbaToHex(this._r, this._g, this._b, this._a);
-        },
-        toHex8String: function() {
-            return '#' + this.toHex8();
-        },
-        toRgb: function() {
-            return { r: mathRound(this._r), g: mathRound(this._g), b: mathRound(this._b), a: this._a };
-        },
-        toRgbString: function() {
-            return (this._a == 1) ?
-              "rgb("  + mathRound(this._r) + ", " + mathRound(this._g) + ", " + mathRound(this._b) + ")" :
-              "rgba(" + mathRound(this._r) + ", " + mathRound(this._g) + ", " + mathRound(this._b) + ", " + this._roundA + ")";
-        },
-        toPercentageRgb: function() {
-            return { r: mathRound(bound01(this._r, 255) * 100) + "%", g: mathRound(bound01(this._g, 255) * 100) + "%", b: mathRound(bound01(this._b, 255) * 100) + "%", a: this._a };
-        },
-        toPercentageRgbString: function() {
-            return (this._a == 1) ?
-              "rgb("  + mathRound(bound01(this._r, 255) * 100) + "%, " + mathRound(bound01(this._g, 255) * 100) + "%, " + mathRound(bound01(this._b, 255) * 100) + "%)" :
-              "rgba(" + mathRound(bound01(this._r, 255) * 100) + "%, " + mathRound(bound01(this._g, 255) * 100) + "%, " + mathRound(bound01(this._b, 255) * 100) + "%, " + this._roundA + ")";
-        },
-        toName: function() {
-            if (this._a === 0) {
-                return "transparent";
-            }
-
-            if (this._a < 1) {
-                return false;
-            }
-
-            return hexNames[rgbToHex(this._r, this._g, this._b, true)] || false;
-        },
-        toFilter: function(secondColor) {
-            var hex8String = '#' + rgbaToHex(this._r, this._g, this._b, this._a);
-            var secondHex8String = hex8String;
-            var gradientType = this._gradientType ? "GradientType = 1, " : "";
-
-            if (secondColor) {
-                var s = Color(secondColor);
-                secondHex8String = s.toHex8String();
-            }
-
-            return "progid:DXImageTransform.Microsoft.gradient("+gradientType+"startColorstr="+hex8String+",endColorstr="+secondHex8String+")";
-        },
-        toString: function(format) {
-            var formatSet = !!format;
-            format = format || this._format;
-
-            var formattedString = false;
-            var hasAlpha = this._a < 1 && this._a >= 0;
-            var needsAlphaFormat = !formatSet && hasAlpha && (format === "hex" || format === "hex6" || format === "hex3" || format === "name");
-
-            if (needsAlphaFormat) {
-                // Special case for "transparent", all other non-alpha formats
-                // will return rgba when there is transparency.
-                if (format === "name" && this._a === 0) {
-                    return this.toName();
-                }
-                return this.toRgbString();
-            }
-            if (format === "rgb") {
-                formattedString = this.toRgbString();
-            }
-            if (format === "prgb") {
-                formattedString = this.toPercentageRgbString();
-            }
-            if (format === "hex" || format === "hex6") {
-                formattedString = this.toHexString();
-            }
-            if (format === "hex3") {
-                formattedString = this.toHexString(true);
-            }
-            if (format === "hex8") {
-                formattedString = this.toHex8String();
-            }
-            if (format === "name") {
-                formattedString = this.toName();
-            }
-            if (format === "hsl") {
-                formattedString = this.toHslString();
-            }
-            if (format === "hsv") {
-                formattedString = this.toHsvString();
-            }
-
-            return formattedString || this.toHexString();
-        },
-
-        _applyModification: function(fn, args) {
-            var color = fn.apply(null, [this].concat([].slice.call(args)));
-            this._r = color._r;
-            this._g = color._g;
-            this._b = color._b;
-            this.setAlpha(color._a);
-            return this;
-        },
-        lighten: function() {
-            return this._applyModification(lighten, arguments);
-        },
-        brighten: function() {
-            return this._applyModification(brighten, arguments);
-        },
-        darken: function() {
-            return this._applyModification(darken, arguments);
-        },
-        desaturate: function() {
-            return this._applyModification(desaturate, arguments);
-        },
-        saturate: function() {
-            return this._applyModification(saturate, arguments);
-        },
-        greyscale: function() {
-            return this._applyModification(greyscale, arguments);
-        },
-        spin: function() {
-            return this._applyModification(spin, arguments);
-        },
-
-        _applyCombination: function(fn, args) {
-            return fn.apply(null, [this].concat([].slice.call(args)));
-        },
-        analogous: function() {
-            return this._applyCombination(analogous, arguments);
-        },
-        complement: function() {
-            return this._applyCombination(complement, arguments);
-        },
-        monochromatic: function() {
-            return this._applyCombination(monochromatic, arguments);
-        },
-        splitcomplement: function() {
-            return this._applyCombination(splitcomplement, arguments);
-        },
-        triad: function() {
-            return this._applyCombination(triad, arguments);
-        },
-        tetrad: function() {
-            return this._applyCombination(tetrad, arguments);
-        }
-	});
-
-
-
-    // If input is an object, force 1 into "1.0" to handle ratios properly
-    // String input requires "1.0" as input, so 1 will be treated as 1
-    Color.fromRatio = function(color, opts) {
-        if (typeof color == "object") {
-            var newColor = {};
-            for (var i in color) {
-                if (color.hasOwnProperty(i)) {
-                    if (i === "a") {
-                        newColor[i] = color[i];
-                    }
-                    else {
-                        newColor[i] = convertToPercentage(color[i]);
-                    }
-                }
-            }
-            color = newColor;
-        }
-
-        return Color(color, opts);
-    };
-
-    // `equals`
-    // Can be called with any Color input
-    Color.equals = function (color1, color2) {
-        if (!color1 || !color2) { return false; }
-        return Color(color1).toRgbString() == Color(color2).toRgbString();
-    };
-    
-    Color.random = function() {
-        return Color.fromRatio({
-            r: mathRandom(),
-            g: mathRandom(),
-            b: mathRandom()
-        });
-    };
-
-   // Modification Functions
-    // ----------------------
-    // Thanks to less.js for some of the basics here
-    // <https://github.com/cloudhead/less.js/blob/master/lib/less/functions.js>
-
-    function desaturate(color, amount) {
-        amount = (amount === 0) ? 0 : (amount || 10);
-        var hsl = Color(color).toHsl();
-        hsl.s -= amount / 100;
-        hsl.s = clamp01(hsl.s);
-        return Color(hsl);
-    }
-
-    function saturate(color, amount) {
-        amount = (amount === 0) ? 0 : (amount || 10);
-        var hsl = Color(color).toHsl();
-        hsl.s += amount / 100;
-        hsl.s = clamp01(hsl.s);
-        return Color(hsl);
-    }
-
-    function greyscale(color) {
-        return Color(color).desaturate(100);
-    }
-
-    function lighten (color, amount) {
-        amount = (amount === 0) ? 0 : (amount || 10);
-        var hsl = Color(color).toHsl();
-        hsl.l += amount / 100;
-        hsl.l = clamp01(hsl.l);
-        return Color(hsl);
-    }
-
-    function brighten(color, amount) {
-        amount = (amount === 0) ? 0 : (amount || 10);
-        var rgb = Color(color).toRgb();
-        rgb.r = mathMax(0, mathMin(255, rgb.r - mathRound(255 * - (amount / 100))));
-        rgb.g = mathMax(0, mathMin(255, rgb.g - mathRound(255 * - (amount / 100))));
-        rgb.b = mathMax(0, mathMin(255, rgb.b - mathRound(255 * - (amount / 100))));
-        return Color(rgb);
-    }
-
-    function darken (color, amount) {
-        amount = (amount === 0) ? 0 : (amount || 10);
-        var hsl = Color(color).toHsl();
-        hsl.l -= amount / 100;
-        hsl.l = clamp01(hsl.l);
-        return Color(hsl);
-    }
-
-    // Spin takes a positive or negative amount within [-360, 360] indicating the change of hue.
-    // Values outside of this range will be wrapped into this range.
-    function spin(color, amount) {
-        var hsl = Color(color).toHsl();
-        var hue = (mathRound(hsl.h) + amount) % 360;
-        hsl.h = hue < 0 ? 360 + hue : hue;
-        return Color(hsl);
-    }
-
-    // Combination Functions
-    // ---------------------
-    // Thanks to jQuery xColor for some of the ideas behind these
-    // <https://github.com/infusion/jQuery-xcolor/blob/master/jquery.xcolor.js>
-
-    function complement(color) {
-        var hsl = Color(color).toHsl();
-        hsl.h = (hsl.h + 180) % 360;
-        return Color(hsl);
-    }
-
-    function triad(color) {
-        var hsl = Color(color).toHsl();
-        var h = hsl.h;
-        return [
-            Color(color),
-            Color({ h: (h + 120) % 360, s: hsl.s, l: hsl.l }),
-            Color({ h: (h + 240) % 360, s: hsl.s, l: hsl.l })
-        ];
-    }
-
-    function tetrad(color) {
-        var hsl = Color(color).toHsl();
-        var h = hsl.h;
-        return [
-            Color(color),
-            Color({ h: (h + 90) % 360, s: hsl.s, l: hsl.l }),
-            Color({ h: (h + 180) % 360, s: hsl.s, l: hsl.l }),
-            Color({ h: (h + 270) % 360, s: hsl.s, l: hsl.l })
-        ];
-    }
-
-    function splitcomplement(color) {
-        var hsl = Color(color).toHsl();
-        var h = hsl.h;
-        return [
-            Color(color),
-            Color({ h: (h + 72) % 360, s: hsl.s, l: hsl.l}),
-            Color({ h: (h + 216) % 360, s: hsl.s, l: hsl.l})
-        ];
-    }
-
-    function analogous(color, results, slices) {
-        results = results || 6;
-        slices = slices || 30;
-
-        var hsl = Color(color).toHsl();
-        var part = 360 / slices;
-        var ret = [Color(color)];
-
-        for (hsl.h = ((hsl.h - (part * results >> 1)) + 720) % 360; --results; ) {
-            hsl.h = (hsl.h + part) % 360;
-            ret.push(Color(hsl));
-        }
-        return ret;
-    }
-
-    function monochromatic(color, results) {
-        results = results || 6;
-        var hsv = Color(color).toHsv();
-        var h = hsv.h, s = hsv.s, v = hsv.v;
-        var ret = [];
-        var modification = 1 / results;
-
-        while (results--) {
-            ret.push(Color({ h: h, s: s, v: v}));
-            v = (v + modification) % 1;
-        }
-
-        return ret;
-    }
-
-    // Utility Functions
-    // ---------------------
-
-    Color.mix = function(color1, color2, amount) {
-        amount = (amount === 0) ? 0 : (amount || 50);
-
-        var rgb1 = Color(color1).toRgb();
-        var rgb2 = Color(color2).toRgb();
-
-        var p = amount / 100;
-        var w = p * 2 - 1;
-        var a = rgb2.a - rgb1.a;
-
-        var w1;
-
-        if (w * a == -1) {
-            w1 = w;
-        } else {
-            w1 = (w + a) / (1 + w * a);
-        }
-
-        w1 = (w1 + 1) / 2;
-
-        var w2 = 1 - w1;
-
-        var rgba = {
-            r: rgb2.r * w1 + rgb1.r * w2,
-            g: rgb2.g * w1 + rgb1.g * w2,
-            b: rgb2.b * w1 + rgb1.b * w2,
-            a: rgb2.a * p  + rgb1.a * (1 - p)
-        };
-
-        return Color(rgba);
-    };
-
-
-    // Readability Functions
-    // ---------------------
-    // <http://www.w3.org/TR/AERT#color-contrast>
-
-    // `readability`
-    // Analyze the 2 colors and returns an object with the following properties:
-    //    `brightness`: difference in brightness between the two colors
-    //    `color`: difference in color/hue between the two colors
-    Color.readability = function(color1, color2) {
-        var c1 = Color(color1);
-        var c2 = Color(color2);
-        var rgb1 = c1.toRgb();
-        var rgb2 = c2.toRgb();
-        var brightnessA = c1.getBrightness();
-        var brightnessB = c2.getBrightness();
-        var colorDiff = (
-            Math.max(rgb1.r, rgb2.r) - Math.min(rgb1.r, rgb2.r) +
-            Math.max(rgb1.g, rgb2.g) - Math.min(rgb1.g, rgb2.g) +
-            Math.max(rgb1.b, rgb2.b) - Math.min(rgb1.b, rgb2.b)
-        );
-
-        return {
-            brightness: Math.abs(brightnessA - brightnessB),
-            color: colorDiff
-        };
-    };
-
-    // `readable`
-    // http://www.w3.org/TR/AERT#color-contrast
-    // Ensure that foreground and background color combinations provide sufficient contrast.
-    // *Example*
-    //    Color.isReadable("#000", "#111") => false
-    Color.isReadable = function(color1, color2) {
-        var readability = Color.readability(color1, color2);
-        return readability.brightness > 125 && readability.color > 500;
-    };
-
-    // `mostReadable`
-    // Given a base color and a list of possible foreground or background
-    // colors for that base, returns the most readable color.
-    // *Example*
-    //    Color.mostReadable("#123", ["#fff", "#000"]) => "#000"
-    Color.mostReadable = function(baseColor, colorList) {
-        var bestColor = null;
-        var bestScore = 0;
-        var bestIsReadable = false;
-        for (var i=0; i < colorList.length; i++) {
-
-            // We normalize both around the "acceptable" breaking point,
-            // but rank brightness constrast higher than hue.
-
-            var readability = Color.readability(baseColor, colorList[i]);
-            var readable = readability.brightness > 125 && readability.color > 500;
-            var score = 3 * (readability.brightness / 125) + (readability.color / 500);
-
-            if ((readable && ! bestIsReadable) ||
-                (readable && bestIsReadable && score > bestScore) ||
-                ((! readable) && (! bestIsReadable) && score > bestScore)) {
-                bestIsReadable = readable;
-                bestScore = score;
-                bestColor = Color(colorList[i]);
-            }
-        }
-        return bestColor;
-    };
-
-
-	return Color;
-});
-
-define('skylark-domx-files/files',[
-    "skylark-langx/skylark"
-], function(skylark) {
-
-    function dataURLtoBlob(dataurl) {
-        var arr = dataurl.split(','),
-            mime = arr[0].match(/:(.*?);/)[1],
-            bstr = atob(arr[1]),
-            n = bstr.length,
-            u8arr = new Uint8Array(n);
-        while (n--) {
-            u8arr[n] = bstr.charCodeAt(n);
-        }
-        return new Blob([u8arr], { type: mime });
-    }
-
-
-    var files = function() {
-        return files;
-    };
-
-    return skylark.attach("domx.files", files);
-});
 define('skylark-domx-styler/styler',[
     "skylark-langx/skylark",
     "skylark-langx/langx"
@@ -9556,294 +8382,6 @@ define('skylark-domx-styler/main',[
 });
 define('skylark-domx-styler', ['skylark-domx-styler/main'], function (main) { return main; });
 
-define('skylark-storages-diskfs/diskfs',[
-    "skylark-langx/skylark"
-], function(skylark) {
-
-    function dataURLtoBlob(dataurl) {
-        var arr = dataurl.split(','),
-            mime = arr[0].match(/:(.*?);/)[1],
-            bstr = atob(arr[1]),
-            n = bstr.length,
-            u8arr = new Uint8Array(n);
-        while (n--) {
-            u8arr[n] = bstr.charCodeAt(n);
-        }
-        return new Blob([u8arr], { type: mime });
-    }
-
-
-    var diskfs = function() {
-        return diskfs;
-    };
-
-    return skylark.attach("storages.diskfs", diskfs);
-});
- define('skylark-storages-diskfs/webentry',[
-    "skylark-langx/arrays",
-    "skylark-langx/Deferred",
-    "./diskfs"
-],function(arrays,Deferred, diskfs){
-    var concat = Array.prototype.concat;
-    var webentry = (function() {
-        function one(entry, path) {
-            var d = new Deferred(),
-                onError = function(e) {
-                    d.reject(e);
-                };
-
-            path = path || '';
-            if (entry.isFile) {
-                entry.file(function(file) {
-                    file.relativePath = path;
-                    d.resolve(file);
-                }, onError);
-            } else if (entry.isDirectory) {
-                var dirReader = entry.createReader();
-                dirReader.readEntries(function(entries) {
-                    all(
-                        entries,
-                        path + entry.name + '/'
-                    ).then(function(files) {
-                        d.resolve(files);
-                    }).catch(onError);
-                }, onError);
-            } else {
-                // Return an empy list for file system items
-                // other than files or directories:
-                d.resolve([]);
-            }
-            return d.promise;
-        }
-
-        function all(entries, path) {
-            return Deferred.all(
-                arrays.map(entries, function(entry) {
-                    return one(entry, path);
-                })
-            ).then(function() {
-                return concat.apply([], arguments);
-            });
-        }
-
-        return {
-            one: one,
-            all: all
-        };
-    })();
-
-    return diskfs.webentry = webentry;
-});
-  define('skylark-domx-files/dropzone',[
-    "skylark-langx/arrays",
-    "skylark-langx/Deferred",
-    "skylark-domx-styler",
-    "skylark-domx-eventer",
-    "./files",
-    "skylark-storages-diskfs/webentry"
-],function(arrays,Deferred, styler, eventer, files, webentry){  /*
-     * Make the specified element to could accept HTML5 file drag and drop.
-     * @param {HTMLElement} elm
-     * @param {PlainObject} params
-     */
-    function dropzone(elm, params) {
-        params = params || {};
-        var hoverClass = params.hoverClass || "dropzone",
-            droppedCallback = params.dropped;
-
-        var enterdCount = 0;
-        eventer.on(elm, "dragenter", function(e) {
-            if (e.dataTransfer && e.dataTransfer.types.indexOf("Files") > -1) {
-                eventer.stop(e);
-                enterdCount++;
-                styler.addClass(elm, hoverClass)
-            }
-        });
-
-        eventer.on(elm, "dragover", function(e) {
-            if (e.dataTransfer && e.dataTransfer.types.indexOf("Files") > -1) {
-                eventer.stop(e);
-            }
-        });
-
-        eventer.on(elm, "dragleave", function(e) {
-            if (e.dataTransfer && e.dataTransfer.types.indexOf("Files") > -1) {
-                enterdCount--
-                if (enterdCount == 0) {
-                    styler.removeClass(elm, hoverClass);
-                }
-            }
-        });
-
-        eventer.on(elm, "drop", function(e) {
-            if (e.dataTransfer && e.dataTransfer.types.indexOf("Files") > -1) {
-                styler.removeClass(elm, hoverClass)
-                eventer.stop(e);
-                if (droppedCallback) {
-                    var items = e.dataTransfer.items;
-                    if (items && items.length && (items[0].webkitGetAsEntry ||
-                            items[0].getAsEntry)) {
-                        webentry.all(
-                            arrays.map(items, function(item) {
-                                if (item.webkitGetAsEntry) {
-                                    return item.webkitGetAsEntry();
-                                }
-                                return item.getAsEntry();
-                            })
-                        ).then(droppedCallback);
-                    } else {
-                        droppedCallback(e.dataTransfer.files);
-                    }
-                }
-            }
-        });
-
-        return this;
-    }
-
-     return files.dropzone = dropzone;
-});
-define('skylark-domx-files/pastezone',[
-    "skylark-langx/objects",
-    "skylark-domx-eventer",
-    "./files"
-],function(objects, eventer, files){
-    function pastezone(elm, params) {
-        params = params || {};
-        var hoverClass = params.hoverClass || "pastezone",
-            pastedCallback = params.pasted;
-
-        eventer.on(elm, "paste", function(e) {
-            var items = e.originalEvent && e.originalEvent.clipboardData &&
-                e.originalEvent.clipboardData.items,
-                files = [];
-            if (items && items.length) {
-                objects.each(items, function(index, item) {
-                    var file = item.getAsFile && item.getAsFile();
-                    if (file) {
-                        files.push(file);
-                    }
-                });
-            }
-            if (pastedCallback && files.length) {
-                pastedCallback(files);
-            }
-        });
-
-        return this;
-    }
-
-    return files.pastezone = pastezone;
-
-});
-
-define('skylark-storages-diskfs/select',[
-    "./diskfs"
-],function(diskfs){
-    var fileInput,
-        fileInputForm,
-        fileSelected,
-        maxFileSize = 1 / 0;
-
-    function select(params) {
-        params = params || {};
-        var directory = params.directory || false,
-            multiple = params.multiple || false,
-            accept = params.accept || "", //'image/gif,image/jpeg,image/jpg,image/png,image/svg'
-            title = params.title || "",
-            fileSelected = params.picked;
-        if (!fileInput) {
-            var input = fileInput = document.createElement("input");
-
-            function selectFiles(pickedFiles) {
-                for (var i = pickedFiles.length; i--;) {
-                    if (pickedFiles[i].size > maxFileSize) {
-                        pickedFiles.splice(i, 1);
-                    }
-                }
-                fileSelected(pickedFiles);
-            }
-
-            input.type = "file";
-            input.style.position = "fixed";
-            input.style.left = 0;
-            input.style.top = 0;
-            input.style.opacity = .001;
-            document.body.appendChild(input);
-
-            input.onchange = function(e) {
-                var entries = e.target.webkitEntries || e.target.entries;
-
-                if (entries && entries.length) {
-                    webentry.all(entries).then(function(files) {
-                        selectFiles(files);
-                    });
-                } else {
-                    selectFiles(Array.prototype.slice.call(e.target.files));
-                }
-                // reset to "", so selecting the same file next time still trigger the change handler
-                input.value = "";
-            };
-        }
-        fileInput.multiple = multiple;
-        fileInput.accept = accept;
-        fileInput.title = title;
-
-        fileInput.webkitdirectory = directory;
-        fileInput.click();
-    }
-
-    return diskfs.select = select;
-});
-
-
-define('skylark-domx-files/picker',[
-    "skylark-langx/objects",
-    "skylark-domx-eventer",
-    "./files",
-    "skylark-storages-diskfs/select"
-],function(objects, eventer, files, select){
-    /*
-     * Make the specified element to pop-up the file selection dialog box when clicked , and read the contents the files selected from client file system by user.
-     * @param {HTMLElement} elm
-     * @param {PlainObject} params
-     */
-    function picker(elm, params) {
-        eventer.on(elm, "click", function(e) {
-            e.preventDefault();
-            select(params);
-        });
-        return this;
-    }
-
-    return files.picker = picker;
-
-});
-
-
-
-define('skylark-domx-files/main',[
-	"./files",
-	"skylark-domx-velm",
-	"skylark-domx-query",
-	"./dropzone",
-	"./pastezone",
-	"./picker"
-],function(files,velm,$){
-	velm.delegate([
-		"dropzone",
-		"pastezone",
-		"picker"
-	],files);
-
-    $.fn.pastezone = $.wraps.wrapper_every_act(files.pastezone, files);
-    $.fn.dropzone = $.wraps.wrapper_every_act(files.dropzone, files);
-    $.fn.picker = $.wraps.wrapper_every_act(files.picker, files);
-
-	return files;
-});
-define('skylark-domx-files', ['skylark-domx-files/main'], function (main) { return main; });
-
 define('skylark-domx-geom/geom',[
     "skylark-langx/skylark",
     "skylark-langx/langx",
@@ -10041,6 +8579,27 @@ define('skylark-domx-geom/geom',[
             width: cs.width - pex.left - pex.right,
             height: cs.height - pex.top - pex.bottom
         };
+    }
+
+
+    function fullCover(elem, hor, vert) {
+        let vertical = vert;
+        let horizontal = hor;
+        if (langx.isUndefined(horizontal)) {
+            horizontal = true;
+        }
+        if (langx.isUndefined(vertical)) {
+            vertical = true;
+        }
+        elem.style.position = 'absolute';
+        if (horizontal) {
+            elem.style.left = 0;
+            elem.style.right = 0;
+        }
+        if (vertical) {
+            elem.style.top = 0;
+            elem.style.bottom = 0;
+        }
     }
 
     /*
@@ -10424,6 +8983,8 @@ define('skylark-domx-geom/geom',[
         clientWidth: clientWidth,
 
         contentRect: contentRect,
+
+        fullCover,
 
         getDocumentSize: getDocumentSize,
 
@@ -11702,1124 +10263,1298 @@ define('skylark-domx-fx/main',[
 });
 define('skylark-domx-fx', ['skylark-domx-fx/main'], function (main) { return main; });
 
-define('skylark-domx-plugins/plugins',[
+define('skylark-data-color/colors',[
     "skylark-langx/skylark",
-    "skylark-langx/langx",
-    "skylark-domx-noder",
-    "skylark-domx-data",
-    "skylark-domx-eventer",
-    "skylark-domx-finder",
-    "skylark-domx-geom",
-    "skylark-domx-styler",
-    "skylark-domx-fx",
-    "skylark-domx-query",
-    "skylark-domx-velm"
-], function(skylark, langx, noder, datax, eventer, finder, geom, styler, fx, $, elmx) {
-    "use strict";
-
-    var slice = Array.prototype.slice,
-        concat = Array.prototype.concat,
-        pluginKlasses = {},
-        shortcuts = {};
-
+    "skylark-langx/langx"
+],function(skylark,langx) {
     /*
-     * Create or get or destory a plugin instance assocated with the element.
+     * This module uses the following open source code:
+     *   TinyColor v1.1.2
+     *     https://github.com/bgrins/TinyColor
+     *     Brian Grinstead, MIT License
      */
-    function instantiate(elm,pluginName,options) {
-        var pair = pluginName.split(":"),
-            instanceDataName = pair[1];
-        pluginName = pair[0];
 
-        if (!instanceDataName) {
-            instanceDataName = pluginName;
-        }
+    var colors = skylark.colors =  skylark.colors || {};
 
-        var pluginInstance = datax.data( elm, instanceDataName );
-
-        if (options === "instance") {
-            return pluginInstance;
-        } else if (options === "destroy") {
-            if (!pluginInstance) {
-                throw new Error ("The plugin instance is not existed");
-            }
-            pluginInstance.destroy();
-            datax.removeData( elm, pluginName);
-            pluginInstance = undefined;
-        } else {
-            if (!pluginInstance) {
-                if (options !== undefined && typeof options !== "object") {
-                    throw new Error ("The options must be a plain object");
-                }
-                var pluginKlass = pluginKlasses[pluginName]; 
-                pluginInstance = new pluginKlass(elm,options);
-                datax.data( elm, instanceDataName,pluginInstance );
-            } else if (options) {
-                pluginInstance.reset(options);
-            }
-        }
-
-        return pluginInstance;
-    }
+    var trimLeft = /^[\s,#]+/,
+        trimRight = /\s+$/,
+        math = Math,
+        mathRound = math.round,
+        mathMin = math.min,
+        mathMax = math.max,
+        mathRandom = math.random;
 
 
-    function shortcutter(pluginName,extfn) {
-       /*
-        * Create or get or destory a plugin instance assocated with the element,
-        * and also you can execute the plugin method directory;
-        */
-        return function (elm,options) {
-            var  plugin = instantiate(elm, pluginName,"instance");
-            if ( options === "instance" ) {
-              return plugin || null;
-            }
-
-            if (!plugin) {
-                plugin = instantiate(elm, pluginName,typeof options == 'object' && options || {});
-                if (typeof options != "string") {
-                  return this;
-                }
-            } 
-            if (options) {
-                var args = slice.call(arguments,1); //2
-                if (extfn) {
-                    return extfn.apply(plugin,args);
-                } else {
-                    if (typeof options == 'string') {
-                        var methodName = options;
-
-                        if ( !plugin ) {
-                            throw new Error( "cannot call methods on " + pluginName +
-                                " prior to initialization; " +
-                                "attempted to call method '" + methodName + "'" );
-                        }
-
-                        if ( !langx.isFunction( plugin[ methodName ] ) || methodName.charAt( 0 ) === "_" ) {
-                            throw new Error( "no such method '" + methodName + "' for " + pluginName +
-                                " plugin instance" );
-                        }
-
-                        var ret = plugin[methodName].apply(plugin,args);
-                        if (ret == plugin) {
-                          ret = undefined;
-                        }
-
-                        return ret;
-                    }                
-                }                
-            }
-
-        }
-
-    }
-
-    /*
-     * Register a plugin type
-     */
-    function register( pluginKlass,shortcutName,instanceDataName,extfn) {
-        var pluginName = pluginKlass.prototype.pluginName;
-        
-        pluginKlasses[pluginName] = pluginKlass;
-
-        if (shortcutName) {
-            if (instanceDataName && langx.isFunction(instanceDataName)) {
-                extfn = instanceDataName;
-                instanceDataName = null;
-            } 
-            if (instanceDataName) {
-                pluginName = pluginName + ":" + instanceDataName;
-            }
-
-            var shortcut = shortcuts[shortcutName] = shortcutter(pluginName,extfn);
-                
-            $.fn[shortcutName] = function(options) {
-                var returnValue = this;
-
-                if ( !this.length && options === "instance" ) {
-                  returnValue = undefined;
-                } else {
-                  var args = slice.call(arguments);
-                  this.each(function () {
-                    var args2 = slice.call(args);
-                    args2.unshift(this);
-                    var  ret  = shortcut.apply(undefined,args2);
-                    if (ret !== undefined) {
-                        returnValue = ret;
-                    }
-                  });
-                }
-
-                return returnValue;
-            };
-
-            elmx.partial(shortcutName,function(options) {
-                var  ret  = shortcut(this._elm,options);
-                if (ret === undefined) {
-                    ret = this;
-                }
-                return ret;
-            });
-
-        }
-    }
-
- 
-    var Plugin =   langx.Evented.inherit({
-        klassName: "Plugin",
-
-        _construct : function(elm,options) {
-           this._elm = elm;
-           this._initOptions(options);
-        },
-
-        _initOptions : function(options) {
-          var ctor = this.constructor,
-              cache = ctor.cache = ctor.cache || {},
-              defaults = cache.defaults;
-          if (!defaults) {
-            var  ctors = [];
-            do {
-              ctors.unshift(ctor);
-              if (ctor === Plugin) {
-                break;
-              }
-              ctor = ctor.superclass;
-            } while (ctor);
-
-            defaults = cache.defaults = {};
-            for (var i=0;i<ctors.length;i++) {
-              ctor = ctors[i];
-              if (ctor.prototype.hasOwnProperty("options")) {
-                langx.mixin(defaults,ctor.prototype.options,true);
-              }
-              if (ctor.hasOwnProperty("options")) {
-                langx.mixin(defaults,ctor.options,true);
-              }
-            }
-          }
-          Object.defineProperty(this,"options",{
-            value :langx.mixin({},defaults,options,true)
-          });
-
-          //return this.options = langx.mixin({},defaults,options);
-          return this.options;
-        },
-
-
-        destroy: function() {
-            var that = this;
-
-            this._destroy();
-            // We can probably remove the unbind calls in 2.0
-            // all event bindings should go through this._on()
-            datax.removeData(this._elm,this.pluginName );
-        },
-
-        _destroy: langx.noop,
-
-        _delay: function( handler, delay ) {
-            function handlerProxy() {
-                return ( typeof handler === "string" ? instance[ handler ] : handler )
-                    .apply( instance, arguments );
-            }
-            var instance = this;
-            return setTimeout( handlerProxy, delay || 0 );
-        },
-
-        option: function( key, value ) {
-            var options = key;
-            var parts;
-            var curOption;
-            var i;
-
-            if ( arguments.length === 0 ) {
-
-                // Don't return a reference to the internal hash
-                return langx.mixin( {}, this.options );
-            }
-
-            if ( typeof key === "string" ) {
-
-                // Handle nested keys, e.g., "foo.bar" => { foo: { bar: ___ } }
-                options = {};
-                parts = key.split( "." );
-                key = parts.shift();
-                if ( parts.length ) {
-                    curOption = options[ key ] = langx.mixin( {}, this.options[ key ] );
-                    for ( i = 0; i < parts.length - 1; i++ ) {
-                        curOption[ parts[ i ] ] = curOption[ parts[ i ] ] || {};
-                        curOption = curOption[ parts[ i ] ];
-                    }
-                    key = parts.pop();
-                    if ( arguments.length === 1 ) {
-                        return curOption[ key ] === undefined ? null : curOption[ key ];
-                    }
-                    curOption[ key ] = value;
-                } else {
-                    if ( arguments.length === 1 ) {
-                        return this.options[ key ] === undefined ? null : this.options[ key ];
-                    }
-                    options[ key ] = value;
-                }
-            }
-
-            this._setOptions( options );
-
-            return this;
-        },
-
-        _setOptions: function( options ) {
-            var key;
-
-            for ( key in options ) {
-                this._setOption( key, options[ key ] );
-            }
-
-            return this;
-        },
-
-        _setOption: function( key, value ) {
-
-            this.options[ key ] = value;
-
-            return this;
-        },
-
-        getUID : function (prefix) {
-            prefix = prefix || "plugin";
-            do prefix += ~~(Math.random() * 1000000)
-            while (document.getElementById(prefix))
-            return prefix;
-        },
-
-        elm : function() {
-            return this._elm;
-        }
-
-    });
-
-    $.fn.plugin = function(name,options) {
-        var args = slice.call( arguments, 1 ),
-            self = this,
-            returnValue = this;
-
-        this.each(function(){
-            returnValue = instantiate.apply(self,[this,name].concat(args));
-        });
-        return returnValue;
+     // Big List of Colors
+    // ------------------
+    // <http://www.w3.org/TR/css3-color/#svg-color>
+    var names = colors.names = {
+        aliceblue: "f0f8ff",
+        antiquewhite: "faebd7",
+        aqua: "0ff",
+        aquamarine: "7fffd4",
+        azure: "f0ffff",
+        beige: "f5f5dc",
+        bisque: "ffe4c4",
+        black: "000",
+        blanchedalmond: "ffebcd",
+        blue: "00f",
+        blueviolet: "8a2be2",
+        brown: "a52a2a",
+        burlywood: "deb887",
+        burntsienna: "ea7e5d",
+        cadetblue: "5f9ea0",
+        chartreuse: "7fff00",
+        chocolate: "d2691e",
+        coral: "ff7f50",
+        cornflowerblue: "6495ed",
+        cornsilk: "fff8dc",
+        crimson: "dc143c",
+        cyan: "0ff",
+        darkblue: "00008b",
+        darkcyan: "008b8b",
+        darkgoldenrod: "b8860b",
+        darkgray: "a9a9a9",
+        darkgreen: "006400",
+        darkgrey: "a9a9a9",
+        darkkhaki: "bdb76b",
+        darkmagenta: "8b008b",
+        darkolivegreen: "556b2f",
+        darkorange: "ff8c00",
+        darkorchid: "9932cc",
+        darkred: "8b0000",
+        darksalmon: "e9967a",
+        darkseagreen: "8fbc8f",
+        darkslateblue: "483d8b",
+        darkslategray: "2f4f4f",
+        darkslategrey: "2f4f4f",
+        darkturquoise: "00ced1",
+        darkviolet: "9400d3",
+        deeppink: "ff1493",
+        deepskyblue: "00bfff",
+        dimgray: "696969",
+        dimgrey: "696969",
+        dodgerblue: "1e90ff",
+        firebrick: "b22222",
+        floralwhite: "fffaf0",
+        forestgreen: "228b22",
+        fuchsia: "f0f",
+        gainsboro: "dcdcdc",
+        ghostwhite: "f8f8ff",
+        gold: "ffd700",
+        goldenrod: "daa520",
+        gray: "808080",
+        green: "008000",
+        greenyellow: "adff2f",
+        grey: "808080",
+        honeydew: "f0fff0",
+        hotpink: "ff69b4",
+        indianred: "cd5c5c",
+        indigo: "4b0082",
+        ivory: "fffff0",
+        khaki: "f0e68c",
+        lavender: "e6e6fa",
+        lavenderblush: "fff0f5",
+        lawngreen: "7cfc00",
+        lemonchiffon: "fffacd",
+        lightblue: "add8e6",
+        lightcoral: "f08080",
+        lightcyan: "e0ffff",
+        lightgoldenrodyellow: "fafad2",
+        lightgray: "d3d3d3",
+        lightgreen: "90ee90",
+        lightgrey: "d3d3d3",
+        lightpink: "ffb6c1",
+        lightsalmon: "ffa07a",
+        lightseagreen: "20b2aa",
+        lightskyblue: "87cefa",
+        lightslategray: "789",
+        lightslategrey: "789",
+        lightsteelblue: "b0c4de",
+        lightyellow: "ffffe0",
+        lime: "0f0",
+        limegreen: "32cd32",
+        linen: "faf0e6",
+        magenta: "f0f",
+        maroon: "800000",
+        mediumaquamarine: "66cdaa",
+        mediumblue: "0000cd",
+        mediumorchid: "ba55d3",
+        mediumpurple: "9370db",
+        mediumseagreen: "3cb371",
+        mediumslateblue: "7b68ee",
+        mediumspringgreen: "00fa9a",
+        mediumturquoise: "48d1cc",
+        mediumvioletred: "c71585",
+        midnightblue: "191970",
+        mintcream: "f5fffa",
+        mistyrose: "ffe4e1",
+        moccasin: "ffe4b5",
+        navajowhite: "ffdead",
+        navy: "000080",
+        oldlace: "fdf5e6",
+        olive: "808000",
+        olivedrab: "6b8e23",
+        orange: "ffa500",
+        orangered: "ff4500",
+        orchid: "da70d6",
+        palegoldenrod: "eee8aa",
+        palegreen: "98fb98",
+        paleturquoise: "afeeee",
+        palevioletred: "db7093",
+        papayawhip: "ffefd5",
+        peachpuff: "ffdab9",
+        peru: "cd853f",
+        pink: "ffc0cb",
+        plum: "dda0dd",
+        powderblue: "b0e0e6",
+        purple: "800080",
+        rebeccapurple: "663399",
+        red: "f00",
+        rosybrown: "bc8f8f",
+        royalblue: "4169e1",
+        saddlebrown: "8b4513",
+        salmon: "fa8072",
+        sandybrown: "f4a460",
+        seagreen: "2e8b57",
+        seashell: "fff5ee",
+        sienna: "a0522d",
+        silver: "c0c0c0",
+        skyblue: "87ceeb",
+        slateblue: "6a5acd",
+        slategray: "708090",
+        slategrey: "708090",
+        snow: "fffafa",
+        springgreen: "00ff7f",
+        steelblue: "4682b4",
+        tan: "d2b48c",
+        teal: "008080",
+        thistle: "d8bfd8",
+        tomato: "ff6347",
+        turquoise: "40e0d0",
+        violet: "ee82ee",
+        wheat: "f5deb3",
+        white: "fff",
+        whitesmoke: "f5f5f5",
+        yellow: "ff0",
+        yellowgreen: "9acd32"
     };
 
-    elmx.partial("plugin",function(name,options) {
-        var args = slice.call( arguments, 1 );
-        return instantiate.apply(this,[this.domNode,name].concat(args));
-    }); 
+    // Make it easy to access colors via `hexNames[hex]`
+    var hexNames = colors.hexNames = flip(names);
 
 
-    function plugins() {
-        return plugins;
+    // Utilities
+    // ---------
+
+    // `{ 'name1': 'val1' }` becomes `{ 'val1': 'name1' }`
+    function flip(o) {
+        var flipped = { };
+        for (var i in o) {
+            if (o.hasOwnProperty(i)) {
+                flipped[o[i]] = i;
+            }
+        }
+        return flipped;
     }
-     
-    langx.mixin(plugins, {
-        instantiate,
-        Plugin,
-        register,
-        shortcuts
-    });
-
-    return  skylark.attach("domx.plugins",plugins);
-});
-define('skylark-domx-plugins/main',[
-	"./plugins"
-],function(plugins){
-	return plugins;
-});
-define('skylark-domx-plugins', ['skylark-domx-plugins/main'], function (main) { return main; });
-
-define('skylark-data-collection/collections',[
-	"skylark-langx/skylark"
-],function(skylark){
-	return skylark.attach("data.collections",{});
-});
-define('skylark-data-collection/Collection',[
-    "skylark-langx/Evented",
-    "./collections"
-], function(Evented, collections) {
-
-    var Collection = collections.Collection = Evented.inherit({
-
-        "klassName": "Collection",
-
-        _clear: function() {
-            throw new Error('Unimplemented API');
-        },
-
-        "clear": function() {
-            //desc: "Removes all items from the Collection",
-            //result: {
-            //    type: Collection,
-            //    desc: "this instance for chain call"
-            //},
-            //params: [],
-            this._clear();
-            this.trigger("changed:clear");
-            return this;
-        },
-
-        /*
-         *@method count
-         *@return {Number}
-         */
-        count : /*Number*/function () {
-            var c = 0,
-                it = this.iterator();
-            while(!it.hasNext()){
-                c++;
-            }
-            return c;
-        },
-
-        "forEach": function( /*Function*/ func, /*Object?*/ thisArg) {
-            //desc: "Executes a provided callback function once per collection item.",
-            //result: {
-            //    type: Number,
-            //    desc: "the number of items"
-            //},
-            //params: [{
-            //    name: "func",
-            //    type: Function,
-            //    desc: "Function to execute for each element."
-            //}, {
-            //    name: "thisArg",
-            //    type: Object,
-            //    desc: "Value to use as this when executing callback."
-            //}],
-            var it = this.iterator();
-            while(it.hasNext()){
-                var item = it.next();
-                func.call(thisArg || item,item);
-            }
-            return this;
-
-        },
-
-        "iterator" : function() {
-            throw new Error('Unimplemented API');
-        },
-
-        "toArray": function() {
-            //desc: "Returns an array containing all of the items in this collection in proper sequence (from first to last item).",
-            //result: {
-            //    type: Array,
-            //    desc: "an array containing all of the elements in this collection in proper sequence"
-            //},
-            //params: [],
-            var items = [],
-                it = this.iterator();
-            while(!it.hasNext()){
-                items.push(it.next());
-            }
-            return items;
-        }
-    });
-
-    return Collection;
-});
-
-
-define('skylark-data-collection/Map',[
-    "./collections",
-    "./Collection"
-], function( collections, Collection) {
-
-    var Map = collections.Map = Collection.inherit({
-
-        "klassName": "Map",
-
-        _getInnerItems : function() {
-            return this._items;
-        },
-
-        _clear : function() {
-            this._items = [];
-        },
-
-        _findKeyByRegExp: function(regExp, callback) {
-            var items = this._getInnerItems();
-            return items.filter(function(key) {
-                if (key.match(regExp)) {
-                    if (callback) callback(key);
-                    return true;
-                } else {
-                    return false;
-                }
-            });
-        },
-
-        "get":  function(strKey, silent) {
-            //desc: "Returns the item at the specified key in the Hashtable.",
-            //result: {
-            //    type: Object,
-            //    desc: "The item at the specified key."
-            //},
-            //params: [{
-            //    name: "strKey",
-            //    type: String,
-            //    desc: "The key of the item to return."
-            //}, {
-            //    name: "silent",
-            //    type: Boolean,
-            //    desc: "the silent flag.",
-            //    optional: true
-            //}],
-            if (typeof(strKey) != "string") {
-                throw "hash key is not string!";
-            }
-            /*
-            if (!silent && !this.contains(strKey)) {
-                throw "hash key is not  existed";
-            }
-            */
-            var items = this._getInnerItems();
-            return items[strKey];
-        },
-
-        "iterator" : function() {
-            var i =0;
-            return {
-                hasNext : function() {
-                    return i < this._items.length;
-                },
-                next : function() {
-                    var key =  this._items[i++];
-                    return [this._items[key],key];
-                }
-            }
-        },
-
-        "set": function( /*String*/ strKey, /*Object*/ value) {
-            //desc: "Replaces the item at the specified key in the Hashtable with the specified item.",
-            //result: {
-            //    type: Map,
-            //    desc: "this instance for chain call."
-            //},
-            //params: [{
-            //    name: "strKey",
-            //    type: String,
-            //    desc: "key of the item to replace."
-            //}, {
-            //    name: "value",
-            //    type: Object,
-            //    desc: "item to be stored at the specified position."
-            //}],
-            if (typeof(strKey) != "string") {
-                throw "hash key is not string!";
-            }
-
-            /*
-            if (!this.contains(strKey)) {
-                throw "hash key is not existed";
-            }
-            */
-
-            var items = this._getInnerItems();
-            if (items.indexOf(strKey) == -1) {
-                items.push(strKey);
-            }
-            var oldValue = items[strKey];
-            if (oldValue !== value) {
-                items[strKey] = value;
-                var updated = {};
-                updated[strKey] = {
-                    name : strKey,
-                    value : value,
-                    oldValue : oldValue
-                };
-                this.trigger("changed" ,{ //TODO: "changed:"+ strKey
-                    data : updated
-                });
-            }
-            return this;
-        },
-
-
-        "remove": function( /*String*/ strKey) {
-            //desc: "Removes the first occurrence of a specific item from the Hashtable",
-            //result: {
-            //    type: Map,
-            //    desc: "this instance for chain call."
-            //},
-            //params: [{
-            //    name: "strKey",
-            //    type: String,
-            //    desc: "The key for The item to remove from the Hashtable."
-            //}],
-            if (typeof(strKey) != "string") {
-                throw "hash key is not string!";
-            }
-            var items = this._getInnerItems();
-            var idx = items.indexOf(strKey);
-            if (idx >= 0) {
-                delete items[strKey];
-                delete items[idx];
-            }
-        },
-
-        findByRegExp: function( /*String*/ regExp, callback) {
-            //desc: "find regExp items",
-            //result: {
-            //    type: Map,
-            //    desc: "this instance for chain call."
-            //},
-            //params: [{
-            //    name: "regExp",
-            //    type: String,
-            //    desc: "The key for The item to remove from the Hashtable."
-            //}, {
-            //    name: "callback",
-            //    type: Function,
-            //    desc: "the callback method"
-            //}],
-            var items = [],
-                self = this;
-            this._findKeyByRegExp(regExp, function(key) {
-                var item = self.get(key);
-                if (callback) callback(item);
-                items.push(item);
-            });
-            return items;
-        },
-
-        removeByRegExp: function( /*String*/ regExp) {
-            //desc: "Removes regExp items",
-            //result: {
-            //    type: Map,
-            //    desc: "this instance for chain call."
-            //},
-            //params: [{
-            //    name: "regExp",
-            //    type: String,
-            //    desc: "The key for The item to remove from the Hashtable."
-            //}],
-            var self = this;
-            this._findKeyByRegExp(regExp, function(key) {
-                self.remove(key);
-            });
-        },
-
-        "toPlain": function() {
-            //desc: "Returns a plain object containing all of the items in this Hashable.",
-            //result: {
-            //    type: Object,
-            //    desc: "a plain object containing all of the items in this Hashtable."
-            //},
-            //params: [],
-            var items = this._getInnerItems(); 
-
-            for (var i = 0; i < items.length; i++) {
-                var key = items[i];
-                plain[key] = items[key];
-            }
-            return plain;
-        },
-
-        "toString": function( /*String?*/ delim) {
-            //desc: "implementation of toString, follows [].toString().",
-            //result: {
-            //    type: String,
-            //   desc: "The string."
-            //},
-            //params: [{
-            //    name: "delim",
-            //    type: String,
-            //    desc: "The delim ",
-            //    optional: true
-            //}],
-            var items = this._getInnerItems();
-
-            return items.join((delim || ","));
-        },
-
-        "init": function( /*Object*/ data) {
-            var items = this._items = [];
-            for (var name in data) {
-                items.push(name);
-                items[name]= data[name];
-            }
-        }
        
+
+
+    // Given a string or object, convert that input to RGB
+    // Possible string inputs:
+    //
+    //     "red"
+    //     "#f00" or "f00"
+    //     "#ff0000" or "ff0000"
+    //     "#ff000000" or "ff000000"
+    //     "rgb 255 0 0" or "rgb (255, 0, 0)"
+    //     "rgb 1.0 0 0" or "rgb (1, 0, 0)"
+    //     "rgba (255, 0, 0, 1)" or "rgba 255, 0, 0, 1"
+    //     "rgba (1.0, 0, 0, 1)" or "rgba 1.0, 0, 0, 1"
+    //     "hsl(0, 100%, 50%)" or "hsl 0 100% 50%"
+    //     "hsla(0, 100%, 50%, 1)" or "hsla 0 100% 50%, 1"
+    //     "hsv(0, 100%, 100%)" or "hsv 0 100% 100%"
+    //
+    function inputToRGB(color) {
+
+        var rgb = { r: 0, g: 0, b: 0 };
+        var a = 1;
+        var ok = false;
+        var format = false;
+
+        if (typeof color == "string") {
+            color = stringInputToObject(color);
+        }
+
+        if (typeof color == "object") {
+            if (color.hasOwnProperty("r") && color.hasOwnProperty("g") && color.hasOwnProperty("b")) {
+                rgb = rgbToRgb(color.r, color.g, color.b);
+                ok = true;
+                format = String(color.r).substr(-1) === "%" ? "prgb" : "rgb";
+            }
+            else if (color.hasOwnProperty("h") && color.hasOwnProperty("s") && color.hasOwnProperty("v")) {
+                color.s = convertToPercentage(color.s);
+                color.v = convertToPercentage(color.v);
+                rgb = hsvToRgb(color.h, color.s, color.v);
+                ok = true;
+                format = "hsv";
+            }
+            else if (color.hasOwnProperty("h") && color.hasOwnProperty("s") && color.hasOwnProperty("l")) {
+                color.s = convertToPercentage(color.s);
+                color.l = convertToPercentage(color.l);
+                rgb = hslToRgb(color.h, color.s, color.l);
+                ok = true;
+                format = "hsl";
+            }
+
+            if (color.hasOwnProperty("a")) {
+                a = color.a;
+            }
+        }
+
+        a = boundAlpha(a);
+
+        return {
+            ok: ok,
+            format: color.format || format,
+            r: mathMin(255, mathMax(rgb.r, 0)),
+            g: mathMin(255, mathMax(rgb.g, 0)),
+            b: mathMin(255, mathMax(rgb.b, 0)),
+            a: a
+        };
+    }
+
+
+    // Conversion Functions
+    // --------------------
+
+    // `rgbToHsl`, `rgbToHsv`, `hslToRgb`, `hsvToRgb` modified from:
+    // <http://mjijackson.com/2008/02/rgb-to-hsl-and-rgb-to-hsv-color-model-conversion-algorithms-in-javascript>
+
+    // `rgbToRgb`
+    // Handle bounds / percentage checking to conform to CSS color spec
+    // <http://www.w3.org/TR/css3-color/>
+    // *Assumes:* r, g, b in [0, 255] or [0, 1]
+    // *Returns:* { r, g, b } in [0, 255]
+    function rgbToRgb(r, g, b){
+        return {
+            r: bound01(r, 255) * 255,
+            g: bound01(g, 255) * 255,
+            b: bound01(b, 255) * 255
+        };
+    }
+
+    // `rgbToHsl`
+    // Converts an RGB color value to HSL.
+    // *Assumes:* r, g, and b are contained in [0, 255] or [0, 1]
+    // *Returns:* { h, s, l } in [0,1]
+    function rgbToHsl(r, g, b) {
+
+        r = bound01(r, 255);
+        g = bound01(g, 255);
+        b = bound01(b, 255);
+
+        var max = mathMax(r, g, b), min = mathMin(r, g, b);
+        var h, s, l = (max + min) / 2;
+
+        if(max == min) {
+            h = s = 0; // achromatic
+        }
+        else {
+            var d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch(max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+
+            h /= 6;
+        }
+
+        return { h: h, s: s, l: l };
+    }
+
+    // `hslToRgb`
+    // Converts an HSL color value to RGB.
+    // *Assumes:* h is contained in [0, 1] or [0, 360] and s and l are contained [0, 1] or [0, 100]
+    // *Returns:* { r, g, b } in the set [0, 255]
+    function hslToRgb(h, s, l) {
+        var r, g, b;
+
+        h = bound01(h, 360);
+        s = bound01(s, 100);
+        l = bound01(l, 100);
+
+        function hue2rgb(p, q, t) {
+            if(t < 0) t += 1;
+            if(t > 1) t -= 1;
+            if(t < 1/6) return p + (q - p) * 6 * t;
+            if(t < 1/2) return q;
+            if(t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+            return p;
+        }
+
+        if(s === 0) {
+            r = g = b = l; // achromatic
+        }
+        else {
+            var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            var p = 2 * l - q;
+            r = hue2rgb(p, q, h + 1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h - 1/3);
+        }
+
+        return { r: r * 255, g: g * 255, b: b * 255 };
+    }
+
+    // `rgbToHsv`
+    // Converts an RGB color value to HSV
+    // *Assumes:* r, g, and b are contained in the set [0, 255] or [0, 1]
+    // *Returns:* { h, s, v } in [0,1]
+    function rgbToHsv(r, g, b) {
+
+        r = bound01(r, 255);
+        g = bound01(g, 255);
+        b = bound01(b, 255);
+
+        var max = mathMax(r, g, b), min = mathMin(r, g, b);
+        var h, s, v = max;
+
+        var d = max - min;
+        s = max === 0 ? 0 : d / max;
+
+        if(max == min) {
+            h = 0; // achromatic
+        }
+        else {
+            switch(max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+        return { h: h, s: s, v: v };
+    }
+
+    // `hsvToRgb`
+    // Converts an HSV color value to RGB.
+    // *Assumes:* h is contained in [0, 1] or [0, 360] and s and v are contained in [0, 1] or [0, 100]
+    // *Returns:* { r, g, b } in the set [0, 255]
+     function hsvToRgb(h, s, v) {
+
+        h = bound01(h, 360) * 6;
+        s = bound01(s, 100);
+        v = bound01(v, 100);
+
+        var i = math.floor(h),
+            f = h - i,
+            p = v * (1 - s),
+            q = v * (1 - f * s),
+            t = v * (1 - (1 - f) * s),
+            mod = i % 6,
+            r = [v, q, p, p, t, v][mod],
+            g = [t, v, v, q, p, p][mod],
+            b = [p, p, t, v, v, q][mod];
+
+        return { r: r * 255, g: g * 255, b: b * 255 };
+    }
+
+    // `rgbToHex`
+    // Converts an RGB color to hex
+    // Assumes r, g, and b are contained in the set [0, 255]
+    // Returns a 3 or 6 character hex
+    function rgbToHex(r, g, b, allow3Char) {
+
+        var hex = [
+            pad2(mathRound(r).toString(16)),
+            pad2(mathRound(g).toString(16)),
+            pad2(mathRound(b).toString(16))
+        ];
+
+        // Return a 3 character hex if possible
+        if (allow3Char && hex[0].charAt(0) == hex[0].charAt(1) && hex[1].charAt(0) == hex[1].charAt(1) && hex[2].charAt(0) == hex[2].charAt(1)) {
+            return hex[0].charAt(0) + hex[1].charAt(0) + hex[2].charAt(0);
+        }
+
+        return hex.join("");
+    }
+
+    // `rgbaToHex`
+    // Converts an RGBA color plus alpha transparency to hex
+    // Assumes r, g, b and a are contained in the set [0, 255]
+    // Returns an 8 character hex
+    function rgbaToHex(r, g, b, a) {
+
+        var hex = [
+            pad2(convertDecimalToHex(a)),
+            pad2(mathRound(r).toString(16)),
+            pad2(mathRound(g).toString(16)),
+            pad2(mathRound(b).toString(16))
+        ];
+
+        return hex.join("");
+    }
+
+
+
+    // Return a valid alpha value [0,1] with all invalid values being set to 1
+    function boundAlpha(a) {
+        a = parseFloat(a);
+
+        if (isNaN(a) || a < 0 || a > 1) {
+            a = 1;
+        }
+
+        return a;
+    }
+
+    // Take input from [0, n] and return it as [0, 1]
+    function bound01(n, max) {
+        if (isOnePointZero(n)) { n = "100%"; }
+
+        var processPercent = isPercentage(n);
+        n = mathMin(max, mathMax(0, parseFloat(n)));
+
+        // Automatically convert percentage into number
+        if (processPercent) {
+            n = parseInt(n * max, 10) / 100;
+        }
+
+        // Handle floating point rounding errors
+        if ((math.abs(n - max) < 0.000001)) {
+            return 1;
+        }
+
+        // Convert into [0, 1] range if it isn't already
+        return (n % max) / parseFloat(max);
+    }
+
+    // Force a number between 0 and 1
+    function clamp01(val) {
+        return mathMin(1, mathMax(0, val));
+    }
+
+    // Parse a base-16 hex value into a base-10 integer
+    function parseIntFromHex(val) {
+        return parseInt(val, 16);
+    }
+
+    // Need to handle 1.0 as 100%, since once it is a number, there is no difference between it and 1
+    // <http://stackoverflow.com/questions/7422072/javascript-how-to-detect-number-as-a-decimal-including-1-0>
+    function isOnePointZero(n) {
+        return typeof n == "string" && n.indexOf('.') != -1 && parseFloat(n) === 1;
+    }
+
+    // Check to see if string passed in is a percentage
+    function isPercentage(n) {
+        return typeof n === "string" && n.indexOf('%') != -1;
+    }
+
+    // Force a hex value to have 2 characters
+    function pad2(c) {
+        return c.length == 1 ? '0' + c : '' + c;
+    }
+
+    // Replace a decimal with it's percentage value
+    function convertToPercentage(n) {
+        if (n <= 1) {
+            n = (n * 100) + "%";
+        }
+
+        return n;
+    }
+
+    // Converts a decimal to a hex value
+    function convertDecimalToHex(d) {
+        return Math.round(parseFloat(d) * 255).toString(16);
+    }
+    // Converts a hex value to a decimal
+    function convertHexToDecimal(h) {
+        return (parseIntFromHex(h) / 255);
+    }
+
+    var matchers = (function() {
+
+        // <http://www.w3.org/TR/css3-values/#integers>
+        var CSS_INTEGER = "[-\\+]?\\d+%?";
+
+        // <http://www.w3.org/TR/css3-values/#number-value>
+        var CSS_NUMBER = "[-\\+]?\\d*\\.\\d+%?";
+
+        // Allow positive/negative integer/number.  Don't capture the either/or, just the entire outcome.
+        var CSS_UNIT = "(?:" + CSS_NUMBER + ")|(?:" + CSS_INTEGER + ")";
+
+        // Actual matching.
+        // Parentheses and commas are optional, but not required.
+        // Whitespace can take the place of commas or opening paren
+        var PERMISSIVE_MATCH3 = "[\\s|\\(]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")\\s*\\)?";
+        var PERMISSIVE_MATCH4 = "[\\s|\\(]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")\\s*\\)?";
+
+        return {
+            rgb: new RegExp("rgb" + PERMISSIVE_MATCH3),
+            rgba: new RegExp("rgba" + PERMISSIVE_MATCH4),
+            hsl: new RegExp("hsl" + PERMISSIVE_MATCH3),
+            hsla: new RegExp("hsla" + PERMISSIVE_MATCH4),
+            hsv: new RegExp("hsv" + PERMISSIVE_MATCH3),
+            hsva: new RegExp("hsva" + PERMISSIVE_MATCH4),
+            hex3: /^([0-9a-fA-F]{1})([0-9a-fA-F]{1})([0-9a-fA-F]{1})$/,
+            hex6: /^([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/,
+            hex8: /^([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/
+        };
+    })();
+
+    // `stringInputToObject`
+    // Permissive string parsing.  Take in a number of formats, and output an object
+    // based on detected format.  Returns `{ r, g, b }` or `{ h, s, l }` or `{ h, s, v}`
+    function stringInputToObject(color) {
+
+        color = color.replace(trimLeft,'').replace(trimRight, '').toLowerCase();
+        var named = false;
+        if (names[color]) {
+            color = names[color];
+            named = true;
+        }
+        else if (color == 'transparent') {
+            return { r: 0, g: 0, b: 0, a: 0, format: "name" };
+        }
+
+        // Try to match string input using regular expressions.
+        // Keep most of the number bounding out of this function - don't worry about [0,1] or [0,100] or [0,360]
+        // Just return an object and let the conversion functions handle that.
+        // This way the result will be the same whether the tinycolor is initialized with string or object.
+        var match;
+        if ((match = matchers.rgb.exec(color))) {
+            return { r: match[1], g: match[2], b: match[3] };
+        }
+        if ((match = matchers.rgba.exec(color))) {
+            return { r: match[1], g: match[2], b: match[3], a: match[4] };
+        }
+        if ((match = matchers.hsl.exec(color))) {
+            return { h: match[1], s: match[2], l: match[3] };
+        }
+        if ((match = matchers.hsla.exec(color))) {
+            return { h: match[1], s: match[2], l: match[3], a: match[4] };
+        }
+        if ((match = matchers.hsv.exec(color))) {
+            return { h: match[1], s: match[2], v: match[3] };
+        }
+        if ((match = matchers.hsva.exec(color))) {
+            return { h: match[1], s: match[2], v: match[3], a: match[4] };
+        }
+        if ((match = matchers.hex8.exec(color))) {
+            return {
+                a: convertHexToDecimal(match[1]),
+                r: parseIntFromHex(match[2]),
+                g: parseIntFromHex(match[3]),
+                b: parseIntFromHex(match[4]),
+                format: named ? "name" : "hex8"
+            };
+        }
+        if ((match = matchers.hex6.exec(color))) {
+            return {
+                r: parseIntFromHex(match[1]),
+                g: parseIntFromHex(match[2]),
+                b: parseIntFromHex(match[3]),
+                format: named ? "name" : "hex"
+            };
+        }
+        if ((match = matchers.hex3.exec(color))) {
+            return {
+                r: parseIntFromHex(match[1] + '' + match[1]),
+                g: parseIntFromHex(match[2] + '' + match[2]),
+                b: parseIntFromHex(match[3] + '' + match[3]),
+                format: named ? "name" : "hex"
+            };
+        }
+
+        return false;
+    }
+
+    langx.mixin(colors,{
+        inputToRGB : inputToRGB,
+        rgbToRgb : rgbToRgb,
+        rgbToHsl : rgbToHsl,
+        hslToRgb : hslToRgb,
+        rgbToHsv : rgbToHsv,
+        rgbToHex : rgbToHex,
+        rgbaToHex : rgbaToHex,
+        boundAlpha : boundAlpha,
+        bound01 : bound01,
+        clamp01 : clamp01,
+        parseIntFromHex : parseIntFromHex,
+        isOnePointZero : isOnePointZero,
+        isPercentage : isPercentage,
+        pad2 : pad2,
+        convertToPercentage : convertToPercentage,
+        convertHexToDecimal : convertHexToDecimal,
+        stringInputToObject : stringInputToObject
+
     });
-    return Map;
+
+    return skylark.attach("data.colors",colors);
+
 });
 
+define('skylark-data-color/Color',[
+    "skylark-langx/langx",
+    "./colors"
+],function(langx,colors) {
+    /*
+     * This module uses the following open source code:
+     *   TinyColor v1.1.2
+     *     https://github.com/bgrins/TinyColor
+     *     Brian Grinstead, MIT License
+     */
 
-define('skylark-data-collection/HashMap',[
-    "./collections",
-	"./Map"
-],function(collections,_Map) {
+    var inputToRGB = colors.inputToRGB,
+        rgbToRgb = colors.rgbToRgb,
+        rgbToHsl = colors.rgbToHsl,
+        hslToRgb = colors.hslToRgb,
+        rgbToHsv = colors.rgbToHsv,
+        rgbToHex = colors.rgbToHex,
+        rgbaToHex = colors.rgbaToHex,
+        boundAlpha = colors.boundAlpha,
+        bound01 = colors.bound01,
+        clamp01 = colors.clamp01,
+        parseIntFromHex = colors.parseIntFromHex,
+        isOnePointZero = colors.isOnePointZero,
+        isPercentage = colors.isPercentage,
+        pad2 = colors.pad2,
+        convertToPercentage = colors.convertToPercentage,
+        convertHexToDecimal = colors.convertHexToDecimal,
+        stringInputToObject = colors.stringInputToObject,
+        hexNames = colors.hexNames;
 
-	var HashMap = collections.HashMap = _Map.inherit({
+    var tinyCounter = 0,
+        math = Math,
+        mathRound = math.round,
+        mathMin = math.min,
+        mathMax = math.max,
+        mathRandom = math.random;
+
+	var Color = colors.Color = langx.klass({
+		init : function(color, opts) {
+	        color = (color) ? color : '';
+    	    opts = opts || { };
+
+	        // If input is already a Color, return itself
+	        if (color instanceof Color) {
+	           return color;
+	        }
+
+	        var rgb = inputToRGB(color);
+	        this._originalInput = color,
+	        this._r = rgb.r,
+	        this._g = rgb.g,
+	        this._b = rgb.b,
+	        this._a = rgb.a,
+	        this._roundA = mathRound(1000 * this._a) / 1000,
+	        this._format = opts.format || rgb.format;
+	        this._gradientType = opts.gradientType;
+
+	        // Don't let the range of [0,255] come back in [0,1].
+	        // Potentially lose a little bit of precision here, but will fix issues where
+	        // .5 gets interpreted as half of the total, instead of half of 1
+	        // If it was supposed to be 128, this was already taken care of by `inputToRgb`
+	        if (this._r < 1) { this._r = mathRound(this._r); }
+	        if (this._g < 1) { this._g = mathRound(this._g); }
+	        if (this._b < 1) { this._b = mathRound(this._b); }
+
+	        this._ok = rgb.ok;
+	        this._tc_id = tinyCounter++;
+	    },
+
+        isDark: function() {
+            return this.getBrightness() < 128;
+        },
+        isLight: function() {
+            return !this.isDark();
+        },
+        isValid: function() {
+            return this._ok;
+        },
+        getOriginalInput: function() {
+          return this._originalInput;
+        },
+        getFormat: function() {
+            return this._format;
+        },
+        getAlpha: function() {
+            return this._a;
+        },
+        getBrightness: function() {
+            var rgb = this.toRgb();
+            return (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+        },
+        setAlpha: function(value) {
+            this._a = boundAlpha(value);
+            this._roundA = mathRound(1000 * this._a) / 1000;
+            return this;
+        },
+        toHsv: function() {
+            var hsv = rgbToHsv(this._r, this._g, this._b);
+            return { h: hsv.h * 360, s: hsv.s, v: hsv.v, a: this._a };
+        },
+        toHsvString: function() {
+            var hsv = rgbToHsv(this._r, this._g, this._b);
+            var h = mathRound(hsv.h * 360), s = mathRound(hsv.s * 100), v = mathRound(hsv.v * 100);
+            return (this._a == 1) ?
+              "hsv("  + h + ", " + s + "%, " + v + "%)" :
+              "hsva(" + h + ", " + s + "%, " + v + "%, "+ this._roundA + ")";
+        },
+        toHsl: function() {
+            var hsl = rgbToHsl(this._r, this._g, this._b);
+            return { h: hsl.h * 360, s: hsl.s, l: hsl.l, a: this._a };
+        },
+        toHslString: function() {
+            var hsl = rgbToHsl(this._r, this._g, this._b);
+            var h = mathRound(hsl.h * 360), s = mathRound(hsl.s * 100), l = mathRound(hsl.l * 100);
+            return (this._a == 1) ?
+              "hsl("  + h + ", " + s + "%, " + l + "%)" :
+              "hsla(" + h + ", " + s + "%, " + l + "%, "+ this._roundA + ")";
+        },
+        toHex: function(allow3Char) {
+            return rgbToHex(this._r, this._g, this._b, allow3Char);
+        },
+        toHexString: function(allow3Char) {
+            return '#' + this.toHex(allow3Char);
+        },
+        toHex8: function() {
+            return rgbaToHex(this._r, this._g, this._b, this._a);
+        },
+        toHex8String: function() {
+            return '#' + this.toHex8();
+        },
+        toRgb: function() {
+            return { r: mathRound(this._r), g: mathRound(this._g), b: mathRound(this._b), a: this._a };
+        },
+        toRgbString: function() {
+            return (this._a == 1) ?
+              "rgb("  + mathRound(this._r) + ", " + mathRound(this._g) + ", " + mathRound(this._b) + ")" :
+              "rgba(" + mathRound(this._r) + ", " + mathRound(this._g) + ", " + mathRound(this._b) + ", " + this._roundA + ")";
+        },
+        toPercentageRgb: function() {
+            return { r: mathRound(bound01(this._r, 255) * 100) + "%", g: mathRound(bound01(this._g, 255) * 100) + "%", b: mathRound(bound01(this._b, 255) * 100) + "%", a: this._a };
+        },
+        toPercentageRgbString: function() {
+            return (this._a == 1) ?
+              "rgb("  + mathRound(bound01(this._r, 255) * 100) + "%, " + mathRound(bound01(this._g, 255) * 100) + "%, " + mathRound(bound01(this._b, 255) * 100) + "%)" :
+              "rgba(" + mathRound(bound01(this._r, 255) * 100) + "%, " + mathRound(bound01(this._g, 255) * 100) + "%, " + mathRound(bound01(this._b, 255) * 100) + "%, " + this._roundA + ")";
+        },
+        toName: function() {
+            if (this._a === 0) {
+                return "transparent";
+            }
+
+            if (this._a < 1) {
+                return false;
+            }
+
+            return hexNames[rgbToHex(this._r, this._g, this._b, true)] || false;
+        },
+        toFilter: function(secondColor) {
+            var hex8String = '#' + rgbaToHex(this._r, this._g, this._b, this._a);
+            var secondHex8String = hex8String;
+            var gradientType = this._gradientType ? "GradientType = 1, " : "";
+
+            if (secondColor) {
+                var s = Color(secondColor);
+                secondHex8String = s.toHex8String();
+            }
+
+            return "progid:DXImageTransform.Microsoft.gradient("+gradientType+"startColorstr="+hex8String+",endColorstr="+secondHex8String+")";
+        },
+        toString: function(format) {
+            var formatSet = !!format;
+            format = format || this._format;
+
+            var formattedString = false;
+            var hasAlpha = this._a < 1 && this._a >= 0;
+            var needsAlphaFormat = !formatSet && hasAlpha && (format === "hex" || format === "hex6" || format === "hex3" || format === "name");
+
+            if (needsAlphaFormat) {
+                // Special case for "transparent", all other non-alpha formats
+                // will return rgba when there is transparency.
+                if (format === "name" && this._a === 0) {
+                    return this.toName();
+                }
+                return this.toRgbString();
+            }
+            if (format === "rgb") {
+                formattedString = this.toRgbString();
+            }
+            if (format === "prgb") {
+                formattedString = this.toPercentageRgbString();
+            }
+            if (format === "hex" || format === "hex6") {
+                formattedString = this.toHexString();
+            }
+            if (format === "hex3") {
+                formattedString = this.toHexString(true);
+            }
+            if (format === "hex8") {
+                formattedString = this.toHex8String();
+            }
+            if (format === "name") {
+                formattedString = this.toName();
+            }
+            if (format === "hsl") {
+                formattedString = this.toHslString();
+            }
+            if (format === "hsv") {
+                formattedString = this.toHsvString();
+            }
+
+            return formattedString || this.toHexString();
+        },
+
+        _applyModification: function(fn, args) {
+            var color = fn.apply(null, [this].concat([].slice.call(args)));
+            this._r = color._r;
+            this._g = color._g;
+            this._b = color._b;
+            this.setAlpha(color._a);
+            return this;
+        },
+        lighten: function() {
+            return this._applyModification(lighten, arguments);
+        },
+        brighten: function() {
+            return this._applyModification(brighten, arguments);
+        },
+        darken: function() {
+            return this._applyModification(darken, arguments);
+        },
+        desaturate: function() {
+            return this._applyModification(desaturate, arguments);
+        },
+        saturate: function() {
+            return this._applyModification(saturate, arguments);
+        },
+        greyscale: function() {
+            return this._applyModification(greyscale, arguments);
+        },
+        spin: function() {
+            return this._applyModification(spin, arguments);
+        },
+
+        _applyCombination: function(fn, args) {
+            return fn.apply(null, [this].concat([].slice.call(args)));
+        },
+        analogous: function() {
+            return this._applyCombination(analogous, arguments);
+        },
+        complement: function() {
+            return this._applyCombination(complement, arguments);
+        },
+        monochromatic: function() {
+            return this._applyCombination(monochromatic, arguments);
+        },
+        splitcomplement: function() {
+            return this._applyCombination(splitcomplement, arguments);
+        },
+        triad: function() {
+            return this._applyCombination(triad, arguments);
+        },
+        tetrad: function() {
+            return this._applyCombination(tetrad, arguments);
+        }
 	});
 
-	return HashMap;
-});
-define('skylark-widgets-base/base',[
-	"skylark-langx/skylark"
-],function(skylark){
-	return skylark.attach("widgets.base",{});
-});
-define('skylark-widgets-base/Widget',[
-  "skylark-langx/skylark",
-  "skylark-langx/langx",
-  "skylark-domx-browser",
-  "skylark-domx-data",
-  "skylark-domx-eventer",
-  "skylark-domx-noder",
-  "skylark-domx-files",
-  "skylark-domx-geom",
-  "skylark-domx-velm",
-  "skylark-domx-query",
-  "skylark-domx-fx",
-  "skylark-domx-plugins",
-  "skylark-data-collection/HashMap",
-  "./base"
-],function(skylark,langx,browser,datax,eventer,noder,files,geom,elmx,$,fx, plugins,HashMap,base){
 
-/*---------------------------------------------------------------------------------*/
 
-  var Widget = plugins.Plugin.inherit({
-    klassName: "Widget",
-
-    _elmx : elmx,
-
-    _construct : function(elm,options) {
-        if (langx.isHtmlNode(elm)) {
-          options = this._parse(elm,options);
-        } else {
-          options = elm;
-          elm = null;
-        }
-        this.overrided(elm,options);
-
-        if (!elm) {
-          this._velm = this._create();
-          this._elm = this._velm.elm();
-        } else {
-          this._velm = elmx(this._elm);
-        }
-        
-        Object.defineProperty(this,"state",{
-          value :this.options.state || new HashMap()
-        });
-
-        //this.state = this.options.state || new Map();
-        this._init();
-
-        var addonCategoryOptions = this.options.addons;
-        if (addonCategoryOptions) {
-          var widgetCtor = this.constructor,
-              addons = widgetCtor.addons;
-          for (var categoryName in addonCategoryOptions) {
-              for (var i =0;i < addonCategoryOptions[categoryName].length; i++ ) {
-                var addonOption = addonCategoryOptions[categoryName][i];
-                if (langx.isString(addonOption)) {
-                  var addonName = addonOption,
-                      addonSetting = addons[categoryName][addonName],
-                      addonCtor = addonSetting.ctor ? addonSetting.ctor : addonSetting;
-
-                  this.addon(addonCtor,addonSetting.options);
-
+    // If input is an object, force 1 into "1.0" to handle ratios properly
+    // String input requires "1.0" as input, so 1 will be treated as 1
+    Color.fromRatio = function(color, opts) {
+        if (typeof color == "object") {
+            var newColor = {};
+            for (var i in color) {
+                if (color.hasOwnProperty(i)) {
+                    if (i === "a") {
+                        newColor[i] = color[i];
+                    }
+                    else {
+                        newColor[i] = convertToPercentage(color[i]);
+                    }
                 }
-
-              }
-          }
+            }
+            color = newColor;
         }
 
-        if (this._elm.parentElement) {
-          // The widget is already in document
-          this._startup();
+        return Color(color, opts);
+    };
+
+    // `equals`
+    // Can be called with any Color input
+    Color.equals = function (color1, color2) {
+        if (!color1 || !color2) { return false; }
+        return Color(color1).toRgbString() == Color(color2).toRgbString();
+    };
+    
+    Color.random = function() {
+        return Color.fromRatio({
+            r: mathRandom(),
+            g: mathRandom(),
+            b: mathRandom()
+        });
+    };
+
+   // Modification Functions
+    // ----------------------
+    // Thanks to less.js for some of the basics here
+    // <https://github.com/cloudhead/less.js/blob/master/lib/less/functions.js>
+
+    function desaturate(color, amount) {
+        amount = (amount === 0) ? 0 : (amount || 10);
+        var hsl = Color(color).toHsl();
+        hsl.s -= amount / 100;
+        hsl.s = clamp01(hsl.s);
+        return Color(hsl);
+    }
+
+    function saturate(color, amount) {
+        amount = (amount === 0) ? 0 : (amount || 10);
+        var hsl = Color(color).toHsl();
+        hsl.s += amount / 100;
+        hsl.s = clamp01(hsl.s);
+        return Color(hsl);
+    }
+
+    function greyscale(color) {
+        return Color(color).desaturate(100);
+    }
+
+    function lighten (color, amount) {
+        amount = (amount === 0) ? 0 : (amount || 10);
+        var hsl = Color(color).toHsl();
+        hsl.l += amount / 100;
+        hsl.l = clamp01(hsl.l);
+        return Color(hsl);
+    }
+
+    function brighten(color, amount) {
+        amount = (amount === 0) ? 0 : (amount || 10);
+        var rgb = Color(color).toRgb();
+        rgb.r = mathMax(0, mathMin(255, rgb.r - mathRound(255 * - (amount / 100))));
+        rgb.g = mathMax(0, mathMin(255, rgb.g - mathRound(255 * - (amount / 100))));
+        rgb.b = mathMax(0, mathMin(255, rgb.b - mathRound(255 * - (amount / 100))));
+        return Color(rgb);
+    }
+
+    function darken (color, amount) {
+        amount = (amount === 0) ? 0 : (amount || 10);
+        var hsl = Color(color).toHsl();
+        hsl.l -= amount / 100;
+        hsl.l = clamp01(hsl.l);
+        return Color(hsl);
+    }
+
+    // Spin takes a positive or negative amount within [-360, 360] indicating the change of hue.
+    // Values outside of this range will be wrapped into this range.
+    function spin(color, amount) {
+        var hsl = Color(color).toHsl();
+        var hue = (mathRound(hsl.h) + amount) % 360;
+        hsl.h = hue < 0 ? 360 + hue : hue;
+        return Color(hsl);
+    }
+
+    // Combination Functions
+    // ---------------------
+    // Thanks to jQuery xColor for some of the ideas behind these
+    // <https://github.com/infusion/jQuery-xcolor/blob/master/jquery.xcolor.js>
+
+    function complement(color) {
+        var hsl = Color(color).toHsl();
+        hsl.h = (hsl.h + 180) % 360;
+        return Color(hsl);
+    }
+
+    function triad(color) {
+        var hsl = Color(color).toHsl();
+        var h = hsl.h;
+        return [
+            Color(color),
+            Color({ h: (h + 120) % 360, s: hsl.s, l: hsl.l }),
+            Color({ h: (h + 240) % 360, s: hsl.s, l: hsl.l })
+        ];
+    }
+
+    function tetrad(color) {
+        var hsl = Color(color).toHsl();
+        var h = hsl.h;
+        return [
+            Color(color),
+            Color({ h: (h + 90) % 360, s: hsl.s, l: hsl.l }),
+            Color({ h: (h + 180) % 360, s: hsl.s, l: hsl.l }),
+            Color({ h: (h + 270) % 360, s: hsl.s, l: hsl.l })
+        ];
+    }
+
+    function splitcomplement(color) {
+        var hsl = Color(color).toHsl();
+        var h = hsl.h;
+        return [
+            Color(color),
+            Color({ h: (h + 72) % 360, s: hsl.s, l: hsl.l}),
+            Color({ h: (h + 216) % 360, s: hsl.s, l: hsl.l})
+        ];
+    }
+
+    function analogous(color, results, slices) {
+        results = results || 6;
+        slices = slices || 30;
+
+        var hsl = Color(color).toHsl();
+        var part = 360 / slices;
+        var ret = [Color(color)];
+
+        for (hsl.h = ((hsl.h - (part * results >> 1)) + 720) % 360; --results; ) {
+            hsl.h = (hsl.h + part) % 360;
+            ret.push(Color(hsl));
+        }
+        return ret;
+    }
+
+    function monochromatic(color, results) {
+        results = results || 6;
+        var hsv = Color(color).toHsv();
+        var h = hsv.h, s = hsv.s, v = hsv.v;
+        var ret = [];
+        var modification = 1 / results;
+
+        while (results--) {
+            ret.push(Color({ h: h, s: s, v: v}));
+            v = (v + modification) % 1;
         }
 
-     },
+        return ret;
+    }
 
-    /**
-     * Parses widget options from attached element.
-     * This is a callback method called by constructor when attached element is specified.
-     * @method _parse
-     * @return {Object} options.
-     */
-    _parse : function(elm,options) {
-      var optionsAttr = datax.data(elm,"options");
-      if (optionsAttr) {
-         //var options1 = JSON.parse("{" + optionsAttr + "}");
-         var options1 = eval("({" + optionsAttr + "})");
-         options = langx.mixin(options1,options); 
-      }
-      return options || {};
-    },
+    // Utility Functions
+    // ---------------------
 
+    Color.mix = function(color1, color2, amount) {
+        amount = (amount === 0) ? 0 : (amount || 50);
 
-    /**
-     * Create html element for this widget.
-     * This is a callback method called by constructor when attached element is not specified.
-     * @method _create
-     */
-    _create : function() {
-        var template = this.options.template;
-        if (template) {
-          return this._elmx(template);
+        var rgb1 = Color(color1).toRgb();
+        var rgb2 = Color(color2).toRgb();
+
+        var p = amount / 100;
+        var w = p * 2 - 1;
+        var a = rgb2.a - rgb1.a;
+
+        var w1;
+
+        if (w * a == -1) {
+            w1 = w;
         } else {
-          throw new Error("The template is not existed in options!");
+            w1 = (w + a) / (1 + w * a);
         }
-    },
+
+        w1 = (w1 + 1) / 2;
+
+        var w2 = 1 - w1;
+
+        var rgba = {
+            r: rgb2.r * w1 + rgb1.r * w2,
+            g: rgb2.g * w1 + rgb1.g * w2,
+            b: rgb2.b * w1 + rgb1.b * w2,
+            a: rgb2.a * p  + rgb1.a * (1 - p)
+        };
+
+        return Color(rgba);
+    };
 
 
-    /**
-     * Init widget.
-     * This is a callback method called by constructor.
-     * @method _init
-     */
-    _init : function() {
-      var self = this;
-      if (this.widgetClass) {
-        this._velm.addClass(this.widgetClass);
-      }
-      this.state.on("changed",function(e,args) {
-        self._refresh(args.data);
-      });
-    },
+    // Readability Functions
+    // ---------------------
+    // <http://www.w3.org/TR/AERT#color-contrast>
 
+    // `readability`
+    // Analyze the 2 colors and returns an object with the following properties:
+    //    `brightness`: difference in brightness between the two colors
+    //    `color`: difference in color/hue between the two colors
+    Color.readability = function(color1, color2) {
+        var c1 = Color(color1);
+        var c2 = Color(color2);
+        var rgb1 = c1.toRgb();
+        var rgb2 = c2.toRgb();
+        var brightnessA = c1.getBrightness();
+        var brightnessB = c2.getBrightness();
+        var colorDiff = (
+            Math.max(rgb1.r, rgb2.r) - Math.min(rgb1.r, rgb2.r) +
+            Math.max(rgb1.g, rgb2.g) - Math.min(rgb1.g, rgb2.g) +
+            Math.max(rgb1.b, rgb2.b) - Math.min(rgb1.b, rgb2.b)
+        );
 
-    /**
-     * Startup widget.
-     * This is a callback method called when widget element is added into dom.
-     * @method _post
-     */
-    _startup : function() {
+        return {
+            brightness: Math.abs(brightnessA - brightnessB),
+            color: colorDiff
+        };
+    };
 
-    },
+    // `readable`
+    // http://www.w3.org/TR/AERT#color-contrast
+    // Ensure that foreground and background color combinations provide sufficient contrast.
+    // *Example*
+    //    Color.isReadable("#000", "#111") => false
+    Color.isReadable = function(color1, color2) {
+        var readability = Color.readability(color1, color2);
+        return readability.brightness > 125 && readability.color > 500;
+    };
 
+    // `mostReadable`
+    // Given a base color and a list of possible foreground or background
+    // colors for that base, returns the most readable color.
+    // *Example*
+    //    Color.mostReadable("#123", ["#fff", "#000"]) => "#000"
+    Color.mostReadable = function(baseColor, colorList) {
+        var bestColor = null;
+        var bestScore = 0;
+        var bestIsReadable = false;
+        for (var i=0; i < colorList.length; i++) {
 
-    /**
-     * Refresh widget.
-     * This is a callback method called when widget state is changed.
-     * @method _refresh
-     */
-    _refresh : function(updates) {
-      /*
-      var _ = this._,
-          model = _.model,
-          dom = _.dom,
-          props = {
+            // We normalize both around the "acceptable" breaking point,
+            // but rank brightness constrast higher than hue.
 
-          };
-      updates = updates || {};
-      for (var attrName in updates){
-          var v = updates[attrName].value;
-          if (v && v.toCss) {
-              v.toCss(props);
-              updates[attrName].processed = true;
-          }
+            var readability = Color.readability(baseColor, colorList[i]);
+            var readable = readability.brightness > 125 && readability.color > 500;
+            var score = 3 * (readability.brightness / 125) + (readability.color / 500);
 
-      };
-
-      this.css(props);
-
-      if (updates["disabled"]) {
-          var v = updates["disabled"].value;
-          dom.aria('disabled', v);
-          self.classes.toggle('disabled', v);
-      }
-      */
-    },                
-
-    mapping : {
-      "events" : {
-  //       'mousedown .title':  'edit',
-  //       'click .button':     'save',
-  //       'click .open':       function(e) { ... }            
-      },
-
-      "attributs" : {
-
-      },
-
-      "properties" : {
-
-      },
-
-      "styles" : {
-
-      }
-    },
-
-    addon : function(ctor,setting) {
-      var categoryName = ctor.categoryName,
-          addonName = ctor.addonName;
-
-      this._addons = this.addons || {};
-      var category = this._addons[categoryName] = this._addons[categoryName] || {};
-      category[addonName] = new ctor(this,setting);
-      return this;
-    },
-
-    addons : function(categoryName,settings) {
-      this._addons = this.addons || {};
-      var category = this._addons[categoryName] = this._addons[categoryName] || {};
-
-      if (settings == undefined) {
-        return langx.clone(category || null);
-      } else {
-        langx.mixin(category,settings);
-      }
-    },
-
-
-    /**
-     * Returns a html element representing the widget.
-     *
-     * @method render
-     * @return {HtmlElement} HTML element representing the widget.
-     */
-    render: function() {
-      return this._elm;
-    },
-
-
-
-    /**
-     * Returns a parent widget  enclosing this widgets, or null if not exist.
-     *
-     * @method getEnclosing
-     * @return {Widget} The enclosing parent widget, or null if not exist.
-     */
-    getEnclosing : function(selector) {
-      return null;
-    },
-
-    /**
-     * Returns a widget collection with all enclosed child widgets.
-     *
-     * @method getEnclosed
-     * @return {List} Collection with all enclosed child widgets..
-     */
-    getEnclosed : function() {
-      var self = this;
-          children = new ArrayList();
-      return children;
-    },
-
-    /**
-     * Sets the visible state to true.
-     *
-     * @method show
-     * @return {Widget} Current widget instance.
-     */
-
-    show : function() {
-      this._velm.show();
-    },
-
-    /**
-     * Sets the visible state to false.
-     *
-     * @method hide
-     * @return {Widget} Current widget instance.
-     */
-    hide : function() {
-      this._velm.hide();
-    },
-
-    /**
-     * Focuses the current widget.
-     *
-     * @method focus
-     * @return {Widget} Current widget instance.
-     */
-    focus :function() {
-      try {
-        this._velm.focus();
-      } catch (ex) {
-        // Ignore IE error
-      }
-
-      return this;
-    },
-
-    /**
-     * Blurs the current widget.
-     *
-     * @method blur
-     * @return {Widget} Current widget instance.
-     */
-    blur : function() {
-      this._velm.blur();
-
-      return this;
-    },
-
-    enable: function () {
-      this.state.set('disabled',false);
-      return this;
-    },
-
-    disable: function () {
-      this.state.set('disabled',true);
-      return this;
-    },
-
-    /**
-     * Sets the specified aria property.
-     *
-     * @method aria
-     * @param {String} name Name of the aria property to set.
-     * @param {String} value Value of the aria property.
-     * @return {Widget} Current widget instance.
-     */
-    aria : function(name, value) {
-      const self = this, elm = self.getEl(self.ariaTarget);
-
-      if (typeof value === 'undefined') {
-        return self._aria[name];
-      }
-
-      self._aria[name] = value;
-
-      if (self.state.get('rendered')) {
-        elm.setAttribute(name === 'role' ? name : 'aria-' + name, value);
-      }
-
-      return self;
-    },
-
-    attr: function (name,value) {
-        var velm = this._velm,
-            ret = velm.attr(name,value);
-        return ret == velm ? this : ret;
-    },
-
-    css: function (name, value) {
-        var velm = this._velm,
-            ret = velm.css(name, value);
-        return ret == velm ? this : ret;
-    },
-
-    data: function (name, value) {
-        var velm = this._velm,
-            ret = velm.data(name,value);
-        return ret == velm ? this : ret;
-    },
-
-    prop: function (name,value) {
-        var velm = this._velm,
-            ret = velm.prop(name,value);
-        return ret == velm ? this : ret;
-    },
-
-    throb: function(params) {
-      return fx.throb(this._elm,params);
-    },
-
-    emit : function(type,params) {
-      var e = langx.Emitter.createEvent(type,{
-        data : params
-      });
-      return langx.Emitter.prototype.emit.call(this,e,params);
-    },
-
-    /**
-     *  Attach the current widget element to dom document.
-     *
-     * @method attach
-     * @return {Widget} This Widget.
-     */
-    attach : function(target,position){
-        var elm = target;
-        if (!position || position=="child") {
-            noder.append(elm,this._elm);
-        } else  if (position == "before") {
-            noder.before(elm,this._elm);
-        } else if (position == "after") {
-            noder.after(elm,this._elm);
+            if ((readable && ! bestIsReadable) ||
+                (readable && bestIsReadable && score > bestScore) ||
+                ((! readable) && (! bestIsReadable) && score > bestScore)) {
+                bestIsReadable = readable;
+                bestScore = score;
+                bestColor = Color(colorList[i]);
+            }
         }
-        this._startup();
-    },
+        return bestColor;
+    };
 
-    /**
-     *  Detach the current widget element from dom document.
-     *
-     * @method html
-     * @return {HtmlElement} HTML element representing the widget.
-     */
-    detach : function() {
-      this._velm.remove();
-    }
-  });
 
-  Widget.inherit = function(meta) {
-    var ctor = plugins.Plugin.inherit.apply(this,arguments);
-
-    function addStatePropMethod(name) {
-        ctor.prototype[name] = function(value) {
-          if (value !== undefined) {
-            this.state.set(name,value);
-            return this;
-          } else {
-            return this.state.get(name);
-          }
-        };
-    }
-    if (meta.state) {
-      for (var name in meta.state) {
-          addStatePropMethod(name);
-      }
-    }
-
-    if (meta.pluginName) {
-      plugins.register(ctor,meta.pluginName);
-    }
-    return ctor;
-  };
-
-  Widget.register = function(ctor,widgetName) {
-    var meta = ctor.prototype,
-        pluginName = widgetName || meta.pluginName;
-
-    function addStatePropMethod(name) {
-        ctor.prototype[name] = function(value) {
-          if (value !== undefined) {
-            this.state.set(name,value);
-            return this;
-          } else {
-            return this.state.get(name);
-          }
-        };
-    }
-    if (meta.state) {
-      for (var name in meta.state) {
-          addStatePropMethod(name);
-      }
-    }
-
-    if (pluginName) {
-      plugins.register(ctor,pluginName);
-    }
-    return ctor;
-  };
-
-  return base.Widget = Widget;
+	return Color;
 });
 
-define('skylark-widgets-colorpicker/ColorPicker',[
+define('skylark-domx-colorpicker/draggable',[
    "skylark-langx/skylark",
     "skylark-langx/langx",
     "skylark-domx-browser",
     "skylark-domx-noder",
     "skylark-domx-eventer",
     "skylark-domx-finder",
+    "skylark-domx-query"
+],function(skylark, langx, browser, noder, eventer,finder, $) {
+    /**
+    * Lightweight drag helper.  Handles containment within the element, so that
+    * when dragging, the x is within [0,element.width] and y is within [0,element.height]
+    */
+    function draggable(element, onmove, onstart, onstop) {
+        onmove = onmove || function () { };
+        onstart = onstart || function () { };
+        onstop = onstop || function () { };
+        var doc = document;
+        var dragging = false;
+        var offset = {};
+        var maxHeight = 0;
+        var maxWidth = 0;
+        var hasTouch = ('ontouchstart' in window);
+
+        var duringDragEvents = {};
+        duringDragEvents["selectstart"] = prevent;
+        duringDragEvents["dragstart"] = prevent;
+        duringDragEvents["touchmove mousemove"] = move;
+        duringDragEvents["touchend mouseup"] = stop;
+
+        function prevent(e) {
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+            e.returnValue = false;
+        }
+
+        function move(e) {
+            if (dragging) {
+                // Mouseup happened outside of window
+                if (browser.isIE && doc.documentMode < 9 && !e.button) {
+                    return stop();
+                }
+
+                var t0 = e.originalEvent && e.originalEvent.touches && e.originalEvent.touches[0];
+                var pageX = t0 && t0.pageX || e.pageX;
+                var pageY = t0 && t0.pageY || e.pageY;
+
+                var dragX = Math.max(0, Math.min(pageX - offset.left, maxWidth));
+                var dragY = Math.max(0, Math.min(pageY - offset.top, maxHeight));
+
+                if (hasTouch) {
+                    // Stop scrolling in iOS
+                    prevent(e);
+                }
+
+                onmove.apply(element, [dragX, dragY, e]);
+            }
+        }
+
+        function start(e) {
+            var rightclick = (e.which) ? (e.which == 3) : (e.button == 2);
+
+            if (!rightclick && !dragging) {
+                if (onstart.apply(element, arguments) !== false) {
+                    dragging = true;
+                    maxHeight = $(element).height();
+                    maxWidth = $(element).width();
+                    offset = $(element).offset();
+
+                    $(doc).on(duringDragEvents);
+                    $(doc.body).addClass("sp-dragging");
+
+                    move(e);
+
+                    prevent(e);
+                }
+            }
+        }
+
+        function stop() {
+            if (dragging) {
+                $(doc).off(duringDragEvents);
+                $(doc.body).removeClass("sp-dragging");
+
+                // Wait a tick before notifying observers to allow the click event
+                // to fire in Chrome.
+                setTimeout(function() {
+                    onstop.apply(element, arguments);
+                }, 0);
+            }
+            dragging = false;
+        }
+
+        $(element).on("touchstart mousedown", start);
+    }
+	
+	return draggable;
+});
+define('skylark-domx-colorpicker/ColorPicker',[
+   "skylark-langx/skylark",
+    "skylark-langx/langx",
+    "skylark-domx-browser",
+    "skylark-domx-noder",
+    "skylark-domx-finder",
     "skylark-domx-query",
+    "skylark-domx-eventer",
+    "skylark-domx-styler",
+    "skylark-domx-fx",
     "skylark-data-color/colors",
     "skylark-data-color/Color",
-    "skylark-widgets-base/Widget"
-],function(skylark, langx, browser, noder, eventer,finder, $, colors, Color,  Widget) {
+    "./draggable"
+],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,colors, Color,draggable) {
     "use strict";
 
     var noop = langx.noop;
@@ -13896,11 +12631,11 @@ define('skylark-widgets-colorpicker/ColorPicker',[
 
     $.fn.colorPicker = Plugin;
 
-    return skylark.attach("widgets.ColorPicker",ColorPicker);
+    return skylark.attach("domx.ColorPicker",ColorPicker);
 
 });
 
-define('skylark-widgets-colorpicker/i18n/texts_ja',[
+define('skylark-domx-colorpicker/i18n/texts_ja',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["ja"] = {
@@ -13910,7 +12645,7 @@ define('skylark-widgets-colorpicker/i18n/texts_ja',[
 
     return localization;
 });
-define('skylark-widgets-colorpicker/i18n/texts_zh-cn',[
+define('skylark-domx-colorpicker/i18n/texts_zh-cn',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["zh-cn"] = {
@@ -13926,7 +12661,7 @@ define('skylark-widgets-colorpicker/i18n/texts_zh-cn',[
 
 });
 
-define('skylark-widgets-colorpicker/i18n/texts_zh-tw',[
+define('skylark-domx-colorpicker/i18n/texts_zh-tw',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["zh-tw"] = {
@@ -13941,7 +12676,7 @@ define('skylark-widgets-colorpicker/i18n/texts_zh-tw',[
     return localization;
 
 });
-define('skylark-widgets-colorpicker/main',[
+define('skylark-domx-colorpicker/main',[
     "./ColorPicker",
     "./i18n/texts_ja",
     "./i18n/texts_zh-cn",
@@ -13950,7 +12685,7 @@ define('skylark-widgets-colorpicker/main',[
     return ColorPicker;
 });
 
-define('skylark-widgets-colorpicker', ['skylark-widgets-colorpicker/main'], function (main) { return main; });
+define('skylark-domx-colorpicker', ['skylark-domx-colorpicker/main'], function (main) { return main; });
 
 
 },this);

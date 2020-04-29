@@ -3,13 +3,15 @@ define([
     "skylark-langx/langx",
     "skylark-domx-browser",
     "skylark-domx-noder",
-    "skylark-domx-eventer",
     "skylark-domx-finder",
     "skylark-domx-query",
+    "skylark-domx-eventer",
+    "skylark-domx-styler",
+    "skylark-domx-fx",
     "skylark-data-color/colors",
     "skylark-data-color/Color",
-    "skylark-widgets-base/Widget"
-],function(skylark, langx, browser, noder, eventer,finder, $, colors, Color,  Widget) {
+    "./draggable"
+],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,colors, Color,draggable) {
     "use strict";
 
     var noop = langx.noop;
@@ -1086,6 +1088,6 @@ define([
 
     $.fn.colorPicker = Plugin;
 
-    return skylark.attach("widgets.ColorPicker",ColorPicker);
+    return skylark.attach("domx.ColorPicker",ColorPicker);
 
 });

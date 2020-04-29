@@ -1,8 +1,8 @@
 /**
- * skylark-widgets-colorpicker - The skylark color picker widget
+ * skylark-domx-colorpicker - The skylark dom plugin for picking color 
  * @author Hudaokeji, Inc.
  * @version v0.9.0
- * @link https://github.com/skylarkui/skylark-widgets-colorpicker/
+ * @link https://github.com/skylark-domx/skylark-domx-colorpicker/
  * @license MIT
  */
 define(["../ColorPicker"],function(e){return e.localization.ja={cancelText:"中止",chooseText:"選択"}});
