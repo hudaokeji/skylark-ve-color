@@ -685,7 +685,7 @@ define('skylark-langx-objects/objects',[
         return keys;
     }
 
-    function each(obj, callback) {
+    function each(obj, callback,isForEach) {
         var length, key, i, undef, value;
 
         if (obj) {
@@ -696,7 +696,7 @@ define('skylark-langx-objects/objects',[
                 for (key in obj) {
                     if (obj.hasOwnProperty(key)) {
                         value = obj[key];
-                        if (callback.call(value, key, value) === false) {
+                        if ((isForEach ? callback.call(value, value, key) : callback.call(value, key, value) ) === false) {
                             break;
                         }
                     }
@@ -705,7 +705,7 @@ define('skylark-langx-objects/objects',[
                 // Loop array items
                 for (i = 0; i < length; i++) {
                     value = obj[i];
-                    if (callback.call(value, i, value) === false) {
+                    if ((isForEach ? callback.call(value, value, i) : callback.call(value, i, value) )=== false) {
                         break;
                     }
                 }
@@ -2670,13 +2670,74 @@ define('skylark-langx/Deferred',[
 ],function(Deferred){
     return Deferred;
 });
-define('skylark-langx-emitter/Emitter',[
-  "skylark-langx-ns/ns",
+define('skylark-langx-events/events',[
+	"skylark-langx-ns"
+],function(skylark){
+	return skylark.attach("langx.events",{});
+});
+define('skylark-langx-events/Event',[
+  "skylark-langx-objects",
+  "skylark-langx-funcs",
+  "skylark-langx-klass",
+],function(objects,funcs,klass){
+    var eventMethods = {
+        preventDefault: "isDefaultPrevented",
+        stopImmediatePropagation: "isImmediatePropagationStopped",
+        stopPropagation: "isPropagationStopped"
+     };
+        
+
+    function compatible(event, source) {
+        if (source || !event.isDefaultPrevented) {
+            if (!source) {
+                source = event;
+            }
+
+            objects.each(eventMethods, function(name, predicate) {
+                var sourceMethod = source[name];
+                event[name] = function() {
+                    this[predicate] = funcs.returnTrue;
+                    return sourceMethod && sourceMethod.apply(source, arguments);
+                }
+                event[predicate] = funcs.returnFalse;
+            });
+        }
+        return event;
+    }
+
+
+    /*
+    var Event = klass({
+        _construct : function(type,props) {
+            CustomEvent.call(this,type.props);
+            objects.safeMixin(this, props);
+            compatible(this);
+        }
+    },CustomEvent);
+    */
+
+    class Event extends CustomEvent {
+        constructor(type,props) {
+            super(type,props);
+            objects.safeMixin(this, props);
+            compatible(this);
+        } 
+    }
+
+
+    Event.compatible = compatible;
+
+    return Event;
+    
+});
+define('skylark-langx-events/Listener',[
   "skylark-langx-types",
   "skylark-langx-objects",
   "skylark-langx-arrays",
-  "skylark-langx-klass"
-],function(skylark,types,objects,arrays,klass){
+  "skylark-langx-klass",
+  "./events",
+  "./Event"
+],function(types,objects,arrays,klass,events,Event){
     var slice = Array.prototype.slice,
         compact = arrays.compact,
         isDefined = types.isDefined,
@@ -2687,131 +2748,8 @@ define('skylark-langx-emitter/Emitter',[
         mixin = objects.mixin,
         safeMixin = objects.safeMixin;
 
-    function parse(event) {
-        var segs = ("" + event).split(".");
-        return {
-            name: segs[0],
-            ns: segs.slice(1).join(" ")
-        };
-    }
 
-    var Emitter = klass({
-        on: function(events, selector, data, callback, ctx, /*used internally*/ one) {
-            var self = this,
-                _hub = this._hub || (this._hub = {});
-
-            if (isPlainObject(events)) {
-                ctx = callback;
-                each(events, function(type, fn) {
-                    self.on(type, selector, data, fn, ctx, one);
-                });
-                return this;
-            }
-
-            if (!isString(selector) && !isFunction(callback)) {
-                ctx = callback;
-                callback = data;
-                data = selector;
-                selector = undefined;
-            }
-
-            if (isFunction(data)) {
-                ctx = callback;
-                callback = data;
-                data = null;
-            }
-
-            if (isString(events)) {
-                events = events.split(/\s/)
-            }
-
-            events.forEach(function(event) {
-                var parsed = parse(event),
-                    name = parsed.name,
-                    ns = parsed.ns;
-
-                (_hub[name] || (_hub[name] = [])).push({
-                    fn: callback,
-                    selector: selector,
-                    data: data,
-                    ctx: ctx,
-                    ns : ns,
-                    one: one
-                });
-            });
-
-            return this;
-        },
-
-        one: function(events, selector, data, callback, ctx) {
-            return this.on(events, selector, data, callback, ctx, 1);
-        },
-
-        emit: function(e /*,argument list*/ ) {
-            if (!this._hub) {
-                return this;
-            }
-
-            var self = this;
-
-            if (isString(e)) {
-                e = new CustomEvent(e);
-            }
-
-            Object.defineProperty(e,"target",{
-                value : this
-            });
-
-            var args = slice.call(arguments, 1);
-            if (isDefined(args)) {
-                args = [e].concat(args);
-            } else {
-                args = [e];
-            }
-            [e.type || e.name, "all"].forEach(function(eventName) {
-                var parsed = parse(eventName),
-                    name = parsed.name,
-                    ns = parsed.ns;
-
-                var listeners = self._hub[name];
-                if (!listeners) {
-                    return;
-                }
-
-                var len = listeners.length,
-                    reCompact = false;
-
-                for (var i = 0; i < len; i++) {
-                    var listener = listeners[i];
-                    if (ns && (!listener.ns ||  !listener.ns.startsWith(ns))) {
-                        continue;
-                    }
-                    if (e.data) {
-                        if (listener.data) {
-                            e.data = mixin({}, listener.data, e.data);
-                        }
-                    } else {
-                        e.data = listener.data || null;
-                    }
-                    listener.fn.apply(listener.ctx, args);
-                    if (listener.one) {
-                        listeners[i] = null;
-                        reCompact = true;
-                    }
-                }
-
-                if (reCompact) {
-                    self._hub[eventName] = compact(listeners);
-                }
-
-            });
-            return this;
-        },
-
-        listened: function(event) {
-            var evtArr = ((this._hub || (this._events = {}))[event] || []);
-            return evtArr.length > 0;
-        },
+    var Listener = klass({
 
         listenTo: function(obj, event, callback, /*used internally*/ one) {
             if (!obj) {
@@ -2860,6 +2798,217 @@ define('skylark-langx-emitter/Emitter',[
             return this.listenTo(obj, event, callback, 1);
         },
 
+        unlistenTo: function(obj, event, callback) {
+            var listeningTo = this._listeningTo;
+            if (!listeningTo) {
+                return this;
+            }
+
+            if (isString(callback)) {
+                callback = this[callback];
+            }
+                        
+            for (var i = 0; i < listeningTo.length; i++) {
+                var listening = listeningTo[i];
+
+                if (obj && obj != listening.obj) {
+                    continue;
+                }
+
+                var listeningEvents = listening.events;
+                for (var eventName in listeningEvents) {
+                    if (event && event != eventName) {
+                        continue;
+                    }
+
+                    var listeningEvent = listeningEvents[eventName];
+
+                    for (var j = 0; j < listeningEvent.length; j++) {
+                        if (!callback || callback == listeningEvent[i]) {
+                            listening.obj.off(eventName, listeningEvent[i], this);
+                            listeningEvent[i] = null;
+                        }
+                    }
+
+                    listeningEvent = listeningEvents[eventName] = compact(listeningEvent);
+
+                    if (isEmptyObject(listeningEvent)) {
+                        listeningEvents[eventName] = null;
+                    }
+
+                }
+
+                if (isEmptyObject(listeningEvents)) {
+                    listeningTo[i] = null;
+                }
+            }
+
+            listeningTo = this._listeningTo = compact(listeningTo);
+            if (isEmptyObject(listeningTo)) {
+                this._listeningTo = null;
+            }
+
+            return this;
+        }
+    });
+
+    return events.Listener = Listener;
+
+});
+define('skylark-langx-events/Emitter',[
+  "skylark-langx-types",
+  "skylark-langx-objects",
+  "skylark-langx-arrays",
+  "skylark-langx-klass",
+  "./events",
+  "./Event",
+  "./Listener"
+],function(types,objects,arrays,klass,events,Event,Listener){
+    var slice = Array.prototype.slice,
+        compact = arrays.compact,
+        isDefined = types.isDefined,
+        isPlainObject = types.isPlainObject,
+        isFunction = types.isFunction,
+        isString = types.isString,
+        isEmptyObject = types.isEmptyObject,
+        mixin = objects.mixin,
+        safeMixin = objects.safeMixin;
+
+    function parse(event) {
+        var segs = ("" + event).split(".");
+        return {
+            name: segs[0],
+            ns: segs.slice(1).join(" ")
+        };
+    }
+
+    var Emitter = Listener.inherit({
+        on: function(events, selector, data, callback, ctx, /*used internally*/ one) {
+            var self = this,
+                _hub = this._hub || (this._hub = {});
+
+            if (isPlainObject(events)) {
+                ctx = callback;
+                each(events, function(type, fn) {
+                    self.on(type, selector, data, fn, ctx, one);
+                });
+                return this;
+            }
+
+            if (!isString(selector) && !isFunction(callback)) {
+                ctx = callback;
+                callback = data;
+                data = selector;
+                selector = undefined;
+            }
+
+            if (isFunction(data)) {
+                ctx = callback;
+                callback = data;
+                data = null;
+            }
+
+            if (!callback ) {
+                throw new Error("No callback function");
+            } else if (!isFunction(callback)) {
+                throw new Error("The callback  is not afunction");
+            }
+
+            if (isString(events)) {
+                events = events.split(/\s/)
+            }
+
+            events.forEach(function(event) {
+                var parsed = parse(event),
+                    name = parsed.name,
+                    ns = parsed.ns;
+
+                (_hub[name] || (_hub[name] = [])).push({
+                    fn: callback,
+                    selector: selector,
+                    data: data,
+                    ctx: ctx,
+                    ns : ns,
+                    one: one
+                });
+            });
+
+            return this;
+        },
+
+        one: function(events, selector, data, callback, ctx) {
+            return this.on(events, selector, data, callback, ctx, 1);
+        },
+
+        emit: function(e /*,argument list*/ ) {
+            if (!this._hub) {
+                return this;
+            }
+
+            var self = this;
+
+            if (isString(e)) {
+                e = new Event(e); //new CustomEvent(e);
+            }
+
+            Object.defineProperty(e,"target",{
+                value : this
+            });
+
+            var args = slice.call(arguments, 1);
+            if (isDefined(args)) {
+                args = [e].concat(args);
+            } else {
+                args = [e];
+            }
+            [e.type || e.name, "all"].forEach(function(eventName) {
+                var parsed = parse(eventName),
+                    name = parsed.name,
+                    ns = parsed.ns;
+
+                var listeners = self._hub[name];
+                if (!listeners) {
+                    return;
+                }
+
+                var len = listeners.length,
+                    reCompact = false;
+
+                for (var i = 0; i < len; i++) {
+                    if (e.isImmediatePropagationStopped && e.isImmediatePropagationStopped()) {
+                        return this;
+                    }
+                    var listener = listeners[i];
+                    if (ns && (!listener.ns ||  !listener.ns.startsWith(ns))) {
+                        continue;
+                    }
+                    if (e.data) {
+                        if (listener.data) {
+                            e.data = mixin({}, listener.data, e.data);
+                        }
+                    } else {
+                        e.data = listener.data || null;
+                    }
+                    listener.fn.apply(listener.ctx, args);
+                    if (listener.one) {
+                        listeners[i] = null;
+                        reCompact = true;
+                    }
+                }
+
+                if (reCompact) {
+                    self._hub[eventName] = compact(listeners);
+                }
+
+            });
+            return this;
+        },
+
+        listened: function(event) {
+            var evtArr = ((this._hub || (this._events = {}))[event] || []);
+            return evtArr.length > 0;
+        },
+
         off: function(events, callback) {
             var _hub = this._hub || (this._hub = {});
             if (isString(events)) {
@@ -2902,90 +3051,52 @@ define('skylark-langx-emitter/Emitter',[
 
             return this;
         },
-        unlistenTo: function(obj, event, callback) {
-            var listeningTo = this._listeningTo;
-            if (!listeningTo) {
-                return this;
-            }
-            for (var i = 0; i < listeningTo.length; i++) {
-                var listening = listeningTo[i];
-
-                if (obj && obj != listening.obj) {
-                    continue;
-                }
-
-                var listeningEvents = listening.events;
-                for (var eventName in listeningEvents) {
-                    if (event && event != eventName) {
-                        continue;
-                    }
-
-                    var listeningEvent = listeningEvents[eventName];
-
-                    for (var j = 0; j < listeningEvent.length; j++) {
-                        if (!callback || callback == listeningEvent[i]) {
-                            listening.obj.off(eventName, listeningEvent[i], this);
-                            listeningEvent[i] = null;
-                        }
-                    }
-
-                    listeningEvent = listeningEvents[eventName] = compact(listeningEvent);
-
-                    if (isEmptyObject(listeningEvent)) {
-                        listeningEvents[eventName] = null;
-                    }
-
-                }
-
-                if (isEmptyObject(listeningEvents)) {
-                    listeningTo[i] = null;
-                }
-            }
-
-            listeningTo = this._listeningTo = compact(listeningTo);
-            if (isEmptyObject(listeningTo)) {
-                this._listeningTo = null;
-            }
-
-            return this;
-        },
-
         trigger  : function() {
             return this.emit.apply(this,arguments);
         }
     });
 
-    Emitter.createEvent = function (type,props) {
-        var e = new CustomEvent(type,props);
-        return safeMixin(e, props);
-    };
 
-    return skylark.attach("langx.Emitter",Emitter);
+    return　events.Emitter = Emitter;
 
 });
-define('skylark-langx-emitter/Evented',[
-  "skylark-langx-ns/ns",
-	"./Emitter"
-],function(skylark,Emitter){
-	return skylark.attach("langx.Evented",Emitter);
-});
-define('skylark-langx-emitter/main',[
-	"./Emitter",
-	"./Evented"
-],function(Emitter){
-	return Emitter;
-});
-define('skylark-langx-emitter', ['skylark-langx-emitter/main'], function (main) { return main; });
-
 define('skylark-langx/Emitter',[
-    "skylark-langx-emitter"
-],function(Evented){
-    return Evented;
+    "skylark-langx-events/Emitter"
+],function(Emitter){
+    return Emitter;
 });
 define('skylark-langx/Evented',[
-    "skylark-langx-emitter"
-],function(Evented){
-    return Evented;
+    "./Emitter"
+],function(Emitter){
+    return Emitter;
+});
+define('skylark-langx-events/createEvent',[
+	"./events",
+	"./Event"
+],function(events,Event){
+    function createEvent(type,props) {
+        //var e = new CustomEvent(type,props);
+        //return safeMixin(e, props);
+        return new Event(type,props);
+    };
+
+    return events.createEvent = createEvent;	
+});
+define('skylark-langx-events/main',[
+	"./events",
+	"./Event",
+	"./Listener",
+	"./Emitter",
+	"./createEvent"
+],function(events){
+	return events;
+});
+define('skylark-langx-events', ['skylark-langx-events/main'], function (main) { return main; });
+
+define('skylark-langx/events',[
+	"skylark-langx-events"
+],function(events){
+	return events;
 });
 define('skylark-langx/funcs',[
     "skylark-langx-funcs"
@@ -3084,6 +3195,209 @@ define('skylark-langx/hoster',[
 	"skylark-langx-hoster"
 ],function(hoster){
 	return hoster;
+});
+define('skylark-langx-maths/maths',[
+    "skylark-langx-ns",
+    "skylark-langx-types"
+],function(skylark,types){
+
+
+	var _lut = [];
+
+	for ( var i = 0; i < 256; i ++ ) {
+
+		_lut[ i ] = ( i < 16 ? '0' : '' ) + ( i ).toString( 16 );
+
+	}
+
+	var maths = {
+
+		DEG2RAD: Math.PI / 180,
+		RAD2DEG: 180 / Math.PI,
+
+
+
+		clamp: function ( value, min, max ) {
+
+			return Math.max( min, Math.min( max, value ) );
+
+		},
+
+		// compute euclidian modulo of m % n
+		// https://en.wikipedia.org/wiki/Modulo_operation
+
+		euclideanModulo: function ( n, m ) {
+
+			return ( ( n % m ) + m ) % m;
+
+		},
+
+		// Linear mapping from range <a1, a2> to range <b1, b2>
+
+		mapLinear: function ( x, a1, a2, b1, b2 ) {
+
+			return b1 + ( x - a1 ) * ( b2 - b1 ) / ( a2 - a1 );
+
+		},
+
+		// https://en.wikipedia.org/wiki/Linear_interpolation
+
+		lerp: function ( x, y, t ) {
+
+			return ( 1 - t ) * x + t * y;
+
+		},
+
+		// http://en.wikipedia.org/wiki/Smoothstep
+
+		smoothstep: function ( x, min, max ) {
+
+			if ( x <= min ) return 0;
+			if ( x >= max ) return 1;
+
+			x = ( x - min ) / ( max - min );
+
+			return x * x * ( 3 - 2 * x );
+
+		},
+
+		smootherstep: function ( x, min, max ) {
+
+			if ( x <= min ) return 0;
+			if ( x >= max ) return 1;
+
+			x = ( x - min ) / ( max - min );
+
+			return x * x * x * ( x * ( x * 6 - 15 ) + 10 );
+
+		},
+
+		// Random integer from <low, high> interval
+
+		randInt: function ( low, high ) {
+
+			return low + Math.floor( Math.random() * ( high - low + 1 ) );
+
+		},
+
+		// Random float from <low, high> interval
+
+		randFloat: function ( low, high ) {
+
+			return low + Math.random() * ( high - low );
+
+		},
+
+		// Random float from <-range/2, range/2> interval
+
+		randFloatSpread: function ( range ) {
+
+			return range * ( 0.5 - Math.random() );
+
+		},
+
+		degToRad: function ( degrees ) {
+
+			return degrees * MathUtils.DEG2RAD;
+
+		},
+
+		radToDeg: function ( radians ) {
+
+			return radians * MathUtils.RAD2DEG;
+
+		},
+
+		isPowerOfTwo: function ( value ) {
+
+			return ( value & ( value - 1 ) ) === 0 && value !== 0;
+
+		},
+
+		ceilPowerOfTwo: function ( value ) {
+
+			return Math.pow( 2, Math.ceil( Math.log( value ) / Math.LN2 ) );
+
+		},
+
+		floorPowerOfTwo: function ( value ) {
+
+			return Math.pow( 2, Math.floor( Math.log( value ) / Math.LN2 ) );
+
+		},
+
+		setQuaternionFromProperEuler: function ( q, a, b, c, order ) {
+
+			// Intrinsic Proper Euler Angles - see https://en.wikipedia.org/wiki/Euler_angles
+
+			// rotations are applied to the axes in the order specified by 'order'
+			// rotation by angle 'a' is applied first, then by angle 'b', then by angle 'c'
+			// angles are in radians
+
+			var cos = Math.cos;
+			var sin = Math.sin;
+
+			var c2 = cos( b / 2 );
+			var s2 = sin( b / 2 );
+
+			var c13 = cos( ( a + c ) / 2 );
+			var s13 = sin( ( a + c ) / 2 );
+
+			var c1_3 = cos( ( a - c ) / 2 );
+			var s1_3 = sin( ( a - c ) / 2 );
+
+			var c3_1 = cos( ( c - a ) / 2 );
+			var s3_1 = sin( ( c - a ) / 2 );
+
+			if ( order === 'XYX' ) {
+
+				q.set( c2 * s13, s2 * c1_3, s2 * s1_3, c2 * c13 );
+
+			} else if ( order === 'YZY' ) {
+
+				q.set( s2 * s1_3, c2 * s13, s2 * c1_3, c2 * c13 );
+
+			} else if ( order === 'ZXZ' ) {
+
+				q.set( s2 * c1_3, s2 * s1_3, c2 * s13, c2 * c13 );
+
+			} else if ( order === 'XZX' ) {
+
+				q.set( c2 * s13, s2 * s3_1, s2 * c3_1, c2 * c13 );
+
+			} else if ( order === 'YXY' ) {
+
+				q.set( s2 * c3_1, c2 * s13, s2 * s3_1, c2 * c13 );
+
+			} else if ( order === 'ZYZ' ) {
+
+				q.set( s2 * s3_1, s2 * c3_1, c2 * s13, c2 * c13 );
+
+			} else {
+
+				console.warn( 'THREE.MathUtils: .setQuaternionFromProperEuler() encountered an unknown order.' );
+
+			}
+
+		}
+
+	};
+
+
+
+	return  skylark.attach("langx.maths",maths);
+});
+define('skylark-langx-maths/main',[
+	"./maths"
+],function(maths){
+	return maths;
+});
+define('skylark-langx-maths', ['skylark-langx-maths/main'], function (main) { return main; });
+
+define('skylark-langx/maths',[
+    "skylark-langx-maths"
+],function(maths){
+    return maths;
 });
 define('skylark-langx/numbers',[
 	"skylark-langx-numbers"
@@ -3289,8 +3603,13 @@ define('skylark-langx-strings/strings',[
         return document.getElementById(id).innerHTML;
     };
 
+
+    function ltrim(str) {
+        return str.replace(/^\s+/, '');
+    }
+    
     function rtrim(str) {
-        return str.replace(/\s+$/g, '');
+        return str.replace(/\s+$/, '');
     }
 
     // Slugify a string
@@ -3357,6 +3676,8 @@ define('skylark-langx-strings/strings',[
 
         generateUUID : generateUUID,
 
+        ltrim : ltrim,
+
         lowerFirst: function(str) {
             return str.charAt(0).toLowerCase() + str.slice(1);
         },
@@ -3384,8 +3705,159 @@ define('skylark-langx-strings/strings',[
 	}) ; 
 
 });
-define('skylark-langx-strings/main',[
+define('skylark-langx-strings/base64',[
 	"./strings"
+],function(strings) {
+
+	// private property
+	const _keyStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+
+	// private method for UTF-8 encoding
+	function _utf8_encode(string) {
+		string = string.replace(/\r\n/g,"\n");
+		var utftext = "";
+
+		for (var n = 0; n < string.length; n++) {
+
+			var c = string.charCodeAt(n);
+
+			if (c < 128) {
+				utftext += String.fromCharCode(c);
+			}
+			else if((c > 127) && (c < 2048)) {
+				utftext += String.fromCharCode((c >> 6) | 192);
+				utftext += String.fromCharCode((c & 63) | 128);
+			}
+			else {
+				utftext += String.fromCharCode((c >> 12) | 224);
+				utftext += String.fromCharCode(((c >> 6) & 63) | 128);
+				utftext += String.fromCharCode((c & 63) | 128);
+			}
+
+		}
+
+		return utftext;
+	}
+
+	// private method for UTF-8 decoding
+	function _utf8_decode(utftext) {
+		var string = "";
+		var i = 0;
+		var c = c1 = c2 = 0;
+
+		while ( i < utftext.length ) {
+
+			c = utftext.charCodeAt(i);
+
+			if (c < 128) {
+				string += String.fromCharCode(c);
+				i++;
+			}
+			else if((c > 191) && (c < 224)) {
+				c2 = utftext.charCodeAt(i+1);
+				string += String.fromCharCode(((c & 31) << 6) | (c2 & 63));
+				i += 2;
+			}
+			else {
+				c2 = utftext.charCodeAt(i+1);
+				c3 = utftext.charCodeAt(i+2);
+				string += String.fromCharCode(((c & 15) << 12) | ((c2 & 63) << 6) | (c3 & 63));
+				i += 3;
+			}
+
+		}
+
+		return string;
+	}
+
+	// public method for encoding
+	function encode(input, binary) {
+		binary = (binary != null) ? binary : false;
+		var output = "";
+		var chr1, chr2, chr3, enc1, enc2, enc3, enc4;
+		var i = 0;
+
+		if (!binary)
+		{
+			input = _utf8_encode(input);
+		}
+
+		while (i < input.length) {
+
+			chr1 = input.charCodeAt(i++);
+			chr2 = input.charCodeAt(i++);
+			chr3 = input.charCodeAt(i++);
+
+			enc1 = chr1 >> 2;
+			enc2 = ((chr1 & 3) << 4) | (chr2 >> 4);
+			enc3 = ((chr2 & 15) << 2) | (chr3 >> 6);
+			enc4 = chr3 & 63;
+
+			if (isNaN(chr2)) {
+				enc3 = enc4 = 64;
+			} else if (isNaN(chr3)) {
+				enc4 = 64;
+			}
+
+			output = output +
+			this._keyStr.charAt(enc1) + this._keyStr.charAt(enc2) +
+			this._keyStr.charAt(enc3) + this._keyStr.charAt(enc4);
+
+		}
+
+		return output;
+	}
+
+	// public method for decoding
+	function decode(input, binary) {
+		binary = (binary != null) ? binary : false;
+		var output = "";
+		var chr1, chr2, chr3;
+		var enc1, enc2, enc3, enc4;
+		var i = 0;
+
+		input = input.replace(/[^A-Za-z0-9\+\/\=]/g, "");
+
+		while (i < input.length) {
+
+			enc1 = this._keyStr.indexOf(input.charAt(i++));
+			enc2 = this._keyStr.indexOf(input.charAt(i++));
+			enc3 = this._keyStr.indexOf(input.charAt(i++));
+			enc4 = this._keyStr.indexOf(input.charAt(i++));
+
+			chr1 = (enc1 << 2) | (enc2 >> 4);
+			chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
+			chr3 = ((enc3 & 3) << 6) | enc4;
+
+			output = output + String.fromCharCode(chr1);
+
+			if (enc3 != 64) {
+				output = output + String.fromCharCode(chr2);
+			}
+			if (enc4 != 64) {
+				output = output + String.fromCharCode(chr3);
+			}
+
+		}
+
+		if (!binary) {
+			output = _utf8_decode(output);
+		}
+
+		return output;
+
+	}
+
+
+	return strings.base64 = {
+		decode,
+		encode
+	};
+	
+});
+define('skylark-langx-strings/main',[
+	"./strings",
+	"./base64"
 ],function(strings){
 	return strings;
 });
@@ -3608,6 +4080,16 @@ define('skylark-langx/Stateful',[
 
 	return Stateful;
 });
+define('skylark-langx-emitter/Emitter',[
+    "skylark-langx-events/Emitter"
+],function(Emitter){
+    return Emitter;
+});
+define('skylark-langx-emitter/Evented',[
+	"./Emitter"
+],function(Emitter){
+	return Emitter;
+});
 define('skylark-langx-topic/topic',[
 	"skylark-langx-ns",
 	"skylark-langx-emitter/Evented"
@@ -3666,16 +4148,39 @@ define('skylark-langx/langx',[
     "./Deferred",
     "./Emitter",
     "./Evented",
+    "./events",
     "./funcs",
     "./hoster",
     "./klass",
+    "./maths",
     "./numbers",
     "./objects",
     "./Stateful",
     "./strings",
     "./topic",
     "./types"
-], function(skylark,arrays,ArrayStore,aspect,async,datetimes,Deferred,Emitter,Evented,funcs,hoster,klass,numbers,objects,Stateful,strings,topic,types) {
+], function(
+    skylark,
+    arrays,
+    ArrayStore,
+    aspect,
+    async,
+    datetimes,
+    Deferred,
+    Emitter,
+    Evented,
+    events,
+    funcs,
+    hoster,
+    klass,
+    maths,
+    numbers,
+    objects,
+    Stateful,
+    strings,
+    topic,
+    types
+) {
     "use strict";
     var toString = {}.toString,
         concat = Array.prototype.concat,
@@ -8274,12 +8779,12 @@ define('skylark-domx-styler/styler',[
         var self = this;
         name.split(/\s+/g).forEach(function(klass) {
             if (when === undefined) {
-                when = !self.hasClass(elm, klass);
+                when = !hasClass(elm, klass);
             }
             if (when) {
-                self.addClass(elm, klass);
+                addClass(elm, klass);
             } else {
-                self.removeClass(elm, klass)
+                removeClass(elm, klass)
             }
         });
 
@@ -10263,32 +10768,13 @@ define('skylark-domx-fx/main',[
 });
 define('skylark-domx-fx', ['skylark-domx-fx/main'], function (main) { return main; });
 
-define('skylark-data-color/colors',[
-    "skylark-langx/skylark",
-    "skylark-langx/langx"
-],function(skylark,langx) {
-    /*
-     * This module uses the following open source code:
-     *   TinyColor v1.1.2
-     *     https://github.com/bgrins/TinyColor
-     *     Brian Grinstead, MIT License
-     */
-
-    var colors = skylark.colors =  skylark.colors || {};
-
-    var trimLeft = /^[\s,#]+/,
-        trimRight = /\s+$/,
-        math = Math,
-        mathRound = math.round,
-        mathMin = math.min,
-        mathMax = math.max,
-        mathRandom = math.random;
-
+ define('skylark-graphics-color/_names',[
+],function() {
 
      // Big List of Colors
     // ------------------
     // <http://www.w3.org/TR/css3-color/#svg-color>
-    var names = colors.names = {
+    return  {
         aliceblue: "f0f8ff",
         antiquewhite: "faebd7",
         aqua: "0ff",
@@ -10440,9 +10926,13 @@ define('skylark-data-color/colors',[
         yellowgreen: "9acd32"
     };
 
-    // Make it easy to access colors via `hexNames[hex]`
-    var hexNames = colors.hexNames = flip(names);
 
+});
+
+
+ define('skylark-graphics-color/_hexNames',[
+    "./_names"
+],function(names) {
 
     // Utilities
     // ---------
@@ -10457,71 +10947,57 @@ define('skylark-data-color/colors',[
         }
         return flipped;
     }
-       
+    return  flip(names);
+
+});
 
 
-    // Given a string or object, convert that input to RGB
-    // Possible string inputs:
-    //
-    //     "red"
-    //     "#f00" or "f00"
-    //     "#ff0000" or "ff0000"
-    //     "#ff000000" or "ff000000"
-    //     "rgb 255 0 0" or "rgb (255, 0, 0)"
-    //     "rgb 1.0 0 0" or "rgb (1, 0, 0)"
-    //     "rgba (255, 0, 0, 1)" or "rgba 255, 0, 0, 1"
-    //     "rgba (1.0, 0, 0, 1)" or "rgba 1.0, 0, 0, 1"
-    //     "hsl(0, 100%, 50%)" or "hsl 0 100% 50%"
-    //     "hsla(0, 100%, 50%, 1)" or "hsla 0 100% 50%, 1"
-    //     "hsv(0, 100%, 100%)" or "hsv 0 100% 100%"
-    //
-    function inputToRGB(color) {
+define('skylark-graphics-color/_conversion',[
 
-        var rgb = { r: 0, g: 0, b: 0 };
-        var a = 1;
-        var ok = false;
-        var format = false;
+],function(
+){
+    var math = Math,
+        mathRound = math.round,
+        mathMin = math.min,
+        mathMax = math.max,
+        mathRandom = math.random;
+            
+    // Force a hex value to have 2 characters
+    function pad2(c) {
+        return c.length == 1 ? '0' + c : '' + c;
+    }
 
-        if (typeof color == "string") {
-            color = stringInputToObject(color);
+    // Take input from [0, n] and return it as [0, 1]
+    function bound01(n, max) {
+        if (isOnePointZero(n)) { n = "100%"; }
+
+        var processPercent = isPercentage(n);
+        n = mathMin(max, mathMax(0, parseFloat(n)));
+
+        // Automatically convert percentage into number
+        if (processPercent) {
+            n = parseInt(n * max, 10) / 100;
         }
 
-        if (typeof color == "object") {
-            if (color.hasOwnProperty("r") && color.hasOwnProperty("g") && color.hasOwnProperty("b")) {
-                rgb = rgbToRgb(color.r, color.g, color.b);
-                ok = true;
-                format = String(color.r).substr(-1) === "%" ? "prgb" : "rgb";
-            }
-            else if (color.hasOwnProperty("h") && color.hasOwnProperty("s") && color.hasOwnProperty("v")) {
-                color.s = convertToPercentage(color.s);
-                color.v = convertToPercentage(color.v);
-                rgb = hsvToRgb(color.h, color.s, color.v);
-                ok = true;
-                format = "hsv";
-            }
-            else if (color.hasOwnProperty("h") && color.hasOwnProperty("s") && color.hasOwnProperty("l")) {
-                color.s = convertToPercentage(color.s);
-                color.l = convertToPercentage(color.l);
-                rgb = hslToRgb(color.h, color.s, color.l);
-                ok = true;
-                format = "hsl";
-            }
-
-            if (color.hasOwnProperty("a")) {
-                a = color.a;
-            }
+        // Handle floating point rounding errors
+        if ((math.abs(n - max) < 0.000001)) {
+            return 1;
         }
 
-        a = boundAlpha(a);
+        // Convert into [0, 1] range if it isn't already
+        return (n % max) / parseFloat(max);
+    }
 
-        return {
-            ok: ok,
-            format: color.format || format,
-            r: mathMin(255, mathMax(rgb.r, 0)),
-            g: mathMin(255, mathMax(rgb.g, 0)),
-            b: mathMin(255, mathMax(rgb.b, 0)),
-            a: a
-        };
+
+    // Need to handle 1.0 as 100%, since once it is a number, there is no difference between it and 1
+    // <http://stackoverflow.com/questions/7422072/javascript-how-to-detect-number-as-a-decimal-including-1-0>
+    function isOnePointZero(n) {
+        return typeof n == "string" && n.indexOf('.') != -1 && parseFloat(n) === 1;
+    }
+
+    // Check to see if string passed in is a percentage
+    function isPercentage(n) {
+        return typeof n === "string" && n.indexOf('%') != -1;
     }
 
 
@@ -10698,7 +11174,47 @@ define('skylark-data-color/colors',[
         return hex.join("");
     }
 
+	function hexToRgb(hex) {
+	  var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+	  return result ? {
+	    r: parseInt(result[1], 16),
+	    g: parseInt(result[2], 16),
+	    b: parseInt(result[3], 16)
+	  } : null;
+	}
 
+	return  {
+		bound01,
+        rgbToRgb,
+		rgbToHsl,
+		hslToRgb,
+		rgbToHsv,
+		hsvToRgb,
+		rgbToHex,
+		rgbaToHex,
+		hexToRgb
+	};
+});
+define('skylark-graphics-color/Color',[
+    "skylark-langx-ns",
+    "skylark-langx-types",
+    "skylark-langx-klass",
+    "./_names",
+    "./_hexNames",
+    "./_conversion"
+],function(
+    skylark,
+    types,
+    klass,
+    names,
+    hexNames,
+    conversion
+) {
+    var math = Math,
+        mathRound = math.round,
+        mathMin = math.min,
+        mathMax = math.max,
+        mathRandom = math.random;
 
     // Return a valid alpha value [0,1] with all invalid values being set to 1
     function boundAlpha(a) {
@@ -10711,246 +11227,26 @@ define('skylark-data-color/colors',[
         return a;
     }
 
-    // Take input from [0, n] and return it as [0, 1]
-    function bound01(n, max) {
-        if (isOnePointZero(n)) { n = "100%"; }
-
-        var processPercent = isPercentage(n);
-        n = mathMin(max, mathMax(0, parseFloat(n)));
-
-        // Automatically convert percentage into number
-        if (processPercent) {
-            n = parseInt(n * max, 10) / 100;
-        }
-
-        // Handle floating point rounding errors
-        if ((math.abs(n - max) < 0.000001)) {
-            return 1;
-        }
-
-        // Convert into [0, 1] range if it isn't already
-        return (n % max) / parseFloat(max);
-    }
-
-    // Force a number between 0 and 1
+     // Force a number between 0 and 1
     function clamp01(val) {
         return mathMin(1, mathMax(0, val));
     }
-
-    // Parse a base-16 hex value into a base-10 integer
-    function parseIntFromHex(val) {
-        return parseInt(val, 16);
-    }
-
-    // Need to handle 1.0 as 100%, since once it is a number, there is no difference between it and 1
-    // <http://stackoverflow.com/questions/7422072/javascript-how-to-detect-number-as-a-decimal-including-1-0>
-    function isOnePointZero(n) {
-        return typeof n == "string" && n.indexOf('.') != -1 && parseFloat(n) === 1;
-    }
-
-    // Check to see if string passed in is a percentage
-    function isPercentage(n) {
-        return typeof n === "string" && n.indexOf('%') != -1;
-    }
-
-    // Force a hex value to have 2 characters
-    function pad2(c) {
-        return c.length == 1 ? '0' + c : '' + c;
-    }
-
-    // Replace a decimal with it's percentage value
-    function convertToPercentage(n) {
-        if (n <= 1) {
-            n = (n * 100) + "%";
-        }
-
-        return n;
-    }
-
-    // Converts a decimal to a hex value
-    function convertDecimalToHex(d) {
-        return Math.round(parseFloat(d) * 255).toString(16);
-    }
-    // Converts a hex value to a decimal
-    function convertHexToDecimal(h) {
-        return (parseIntFromHex(h) / 255);
-    }
-
-    var matchers = (function() {
-
-        // <http://www.w3.org/TR/css3-values/#integers>
-        var CSS_INTEGER = "[-\\+]?\\d+%?";
-
-        // <http://www.w3.org/TR/css3-values/#number-value>
-        var CSS_NUMBER = "[-\\+]?\\d*\\.\\d+%?";
-
-        // Allow positive/negative integer/number.  Don't capture the either/or, just the entire outcome.
-        var CSS_UNIT = "(?:" + CSS_NUMBER + ")|(?:" + CSS_INTEGER + ")";
-
-        // Actual matching.
-        // Parentheses and commas are optional, but not required.
-        // Whitespace can take the place of commas or opening paren
-        var PERMISSIVE_MATCH3 = "[\\s|\\(]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")\\s*\\)?";
-        var PERMISSIVE_MATCH4 = "[\\s|\\(]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")\\s*\\)?";
-
-        return {
-            rgb: new RegExp("rgb" + PERMISSIVE_MATCH3),
-            rgba: new RegExp("rgba" + PERMISSIVE_MATCH4),
-            hsl: new RegExp("hsl" + PERMISSIVE_MATCH3),
-            hsla: new RegExp("hsla" + PERMISSIVE_MATCH4),
-            hsv: new RegExp("hsv" + PERMISSIVE_MATCH3),
-            hsva: new RegExp("hsva" + PERMISSIVE_MATCH4),
-            hex3: /^([0-9a-fA-F]{1})([0-9a-fA-F]{1})([0-9a-fA-F]{1})$/,
-            hex6: /^([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/,
-            hex8: /^([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/
-        };
-    })();
-
-    // `stringInputToObject`
-    // Permissive string parsing.  Take in a number of formats, and output an object
-    // based on detected format.  Returns `{ r, g, b }` or `{ h, s, l }` or `{ h, s, v}`
-    function stringInputToObject(color) {
-
-        color = color.replace(trimLeft,'').replace(trimRight, '').toLowerCase();
-        var named = false;
-        if (names[color]) {
-            color = names[color];
-            named = true;
-        }
-        else if (color == 'transparent') {
-            return { r: 0, g: 0, b: 0, a: 0, format: "name" };
-        }
-
-        // Try to match string input using regular expressions.
-        // Keep most of the number bounding out of this function - don't worry about [0,1] or [0,100] or [0,360]
-        // Just return an object and let the conversion functions handle that.
-        // This way the result will be the same whether the tinycolor is initialized with string or object.
-        var match;
-        if ((match = matchers.rgb.exec(color))) {
-            return { r: match[1], g: match[2], b: match[3] };
-        }
-        if ((match = matchers.rgba.exec(color))) {
-            return { r: match[1], g: match[2], b: match[3], a: match[4] };
-        }
-        if ((match = matchers.hsl.exec(color))) {
-            return { h: match[1], s: match[2], l: match[3] };
-        }
-        if ((match = matchers.hsla.exec(color))) {
-            return { h: match[1], s: match[2], l: match[3], a: match[4] };
-        }
-        if ((match = matchers.hsv.exec(color))) {
-            return { h: match[1], s: match[2], v: match[3] };
-        }
-        if ((match = matchers.hsva.exec(color))) {
-            return { h: match[1], s: match[2], v: match[3], a: match[4] };
-        }
-        if ((match = matchers.hex8.exec(color))) {
-            return {
-                a: convertHexToDecimal(match[1]),
-                r: parseIntFromHex(match[2]),
-                g: parseIntFromHex(match[3]),
-                b: parseIntFromHex(match[4]),
-                format: named ? "name" : "hex8"
-            };
-        }
-        if ((match = matchers.hex6.exec(color))) {
-            return {
-                r: parseIntFromHex(match[1]),
-                g: parseIntFromHex(match[2]),
-                b: parseIntFromHex(match[3]),
-                format: named ? "name" : "hex"
-            };
-        }
-        if ((match = matchers.hex3.exec(color))) {
-            return {
-                r: parseIntFromHex(match[1] + '' + match[1]),
-                g: parseIntFromHex(match[2] + '' + match[2]),
-                b: parseIntFromHex(match[3] + '' + match[3]),
-                format: named ? "name" : "hex"
-            };
-        }
-
-        return false;
-    }
-
-    langx.mixin(colors,{
-        inputToRGB : inputToRGB,
-        rgbToRgb : rgbToRgb,
-        rgbToHsl : rgbToHsl,
-        hslToRgb : hslToRgb,
-        rgbToHsv : rgbToHsv,
-        rgbToHex : rgbToHex,
-        rgbaToHex : rgbaToHex,
-        boundAlpha : boundAlpha,
-        bound01 : bound01,
-        clamp01 : clamp01,
-        parseIntFromHex : parseIntFromHex,
-        isOnePointZero : isOnePointZero,
-        isPercentage : isPercentage,
-        pad2 : pad2,
-        convertToPercentage : convertToPercentage,
-        convertHexToDecimal : convertHexToDecimal,
-        stringInputToObject : stringInputToObject
-
-    });
-
-    return skylark.attach("data.colors",colors);
-
-});
-
-define('skylark-data-color/Color',[
-    "skylark-langx/langx",
-    "./colors"
-],function(langx,colors) {
-    /*
-     * This module uses the following open source code:
-     *   TinyColor v1.1.2
-     *     https://github.com/bgrins/TinyColor
-     *     Brian Grinstead, MIT License
-     */
-
-    var inputToRGB = colors.inputToRGB,
-        rgbToRgb = colors.rgbToRgb,
-        rgbToHsl = colors.rgbToHsl,
-        hslToRgb = colors.hslToRgb,
-        rgbToHsv = colors.rgbToHsv,
-        rgbToHex = colors.rgbToHex,
-        rgbaToHex = colors.rgbaToHex,
-        boundAlpha = colors.boundAlpha,
-        bound01 = colors.bound01,
-        clamp01 = colors.clamp01,
-        parseIntFromHex = colors.parseIntFromHex,
-        isOnePointZero = colors.isOnePointZero,
-        isPercentage = colors.isPercentage,
-        pad2 = colors.pad2,
-        convertToPercentage = colors.convertToPercentage,
-        convertHexToDecimal = colors.convertHexToDecimal,
-        stringInputToObject = colors.stringInputToObject,
-        hexNames = colors.hexNames;
-
-    var tinyCounter = 0,
-        math = Math,
-        mathRound = math.round,
-        mathMin = math.min,
-        mathMax = math.max,
-        mathRandom = math.random;
-
-	var Color = colors.Color = langx.klass({
-		init : function(color, opts) {
-	        color = (color) ? color : '';
+         
+	var Color = klass({
+		init : function(rgb, opts) {
     	    opts = opts || { };
 
-	        // If input is already a Color, return itself
-	        if (color instanceof Color) {
-	           return color;
-	        }
-
-	        var rgb = inputToRGB(color);
-	        this._originalInput = color,
+	        //var rgb = inputToRGB(color);
+            //
+	        //this._originalInput = color,
+            if (types.isString(rgb)) {
+                rgb= conversion.hexToRgb(rgb);
+            }
 	        this._r = rgb.r,
 	        this._g = rgb.g,
 	        this._b = rgb.b,
-	        this._a = rgb.a,
+	        this._a = types.isDefined(rgb.a) ? rgb.a : 1,
+
 	        this._roundA = mathRound(1000 * this._a) / 1000,
 	        this._format = opts.format || rgb.format;
 	        this._gradientType = opts.gradientType;
@@ -10963,87 +11259,117 @@ define('skylark-data-color/Color',[
 	        if (this._g < 1) { this._g = mathRound(this._g); }
 	        if (this._b < 1) { this._b = mathRound(this._b); }
 
-	        this._ok = rgb.ok;
-	        this._tc_id = tinyCounter++;
 	    },
 
+        /*
+         * Return a boolean indicating whether the color's perceived brightness is dark.
+         */
         isDark: function() {
             return this.getBrightness() < 128;
         },
+
+        /*
+         * Return a boolean indicating whether the color's perceived brightness is light.
+         */
         isLight: function() {
             return !this.isDark();
         },
-        isValid: function() {
-            return this._ok;
-        },
+
         getOriginalInput: function() {
           return this._originalInput;
         },
+
         getFormat: function() {
             return this._format;
         },
+
+        /*
+         * Returns the alpha value of a color, from 0-1
+         */
         getAlpha: function() {
             return this._a;
         },
+
+        /*
+         * Returns the perceived brightness of a color, from 0-255.
+         */
         getBrightness: function() {
             var rgb = this.toRgb();
             return (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
         },
+
+        /*
+         * Sets the alpha value on a current color. Accepted range is in between 0-1.
+         */
         setAlpha: function(value) {
             this._a = boundAlpha(value);
             this._roundA = mathRound(1000 * this._a) / 1000;
             return this;
         },
+
         toHsv: function() {
-            var hsv = rgbToHsv(this._r, this._g, this._b);
+            var hsv = conversion.rgbToHsv(this._r, this._g, this._b);
             return { h: hsv.h * 360, s: hsv.s, v: hsv.v, a: this._a };
         },
+
         toHsvString: function() {
-            var hsv = rgbToHsv(this._r, this._g, this._b);
+            var hsv = conversion.rgbToHsv(this._r, this._g, this._b);
             var h = mathRound(hsv.h * 360), s = mathRound(hsv.s * 100), v = mathRound(hsv.v * 100);
             return (this._a == 1) ?
               "hsv("  + h + ", " + s + "%, " + v + "%)" :
               "hsva(" + h + ", " + s + "%, " + v + "%, "+ this._roundA + ")";
         },
+
         toHsl: function() {
-            var hsl = rgbToHsl(this._r, this._g, this._b);
+            var hsl = conversion.rgbToHsl(this._r, this._g, this._b);
             return { h: hsl.h * 360, s: hsl.s, l: hsl.l, a: this._a };
         },
+
         toHslString: function() {
-            var hsl = rgbToHsl(this._r, this._g, this._b);
+            var hsl = conversion.rgbToHsl(this._r, this._g, this._b);
             var h = mathRound(hsl.h * 360), s = mathRound(hsl.s * 100), l = mathRound(hsl.l * 100);
             return (this._a == 1) ?
               "hsl("  + h + ", " + s + "%, " + l + "%)" :
               "hsla(" + h + ", " + s + "%, " + l + "%, "+ this._roundA + ")";
         },
+
         toHex: function(allow3Char) {
-            return rgbToHex(this._r, this._g, this._b, allow3Char);
+            return conversion.rgbToHex(this._r, this._g, this._b, allow3Char);
         },
+
         toHexString: function(allow3Char) {
             return '#' + this.toHex(allow3Char);
         },
+
         toHex8: function() {
-            return rgbaToHex(this._r, this._g, this._b, this._a);
+            return conversion.rgbaToHex(this._r, this._g, this._b, this._a);
         },
+
         toHex8String: function() {
             return '#' + this.toHex8();
         },
+
         toRgb: function() {
             return { r: mathRound(this._r), g: mathRound(this._g), b: mathRound(this._b), a: this._a };
         },
+
         toRgbString: function() {
             return (this._a == 1) ?
               "rgb("  + mathRound(this._r) + ", " + mathRound(this._g) + ", " + mathRound(this._b) + ")" :
               "rgba(" + mathRound(this._r) + ", " + mathRound(this._g) + ", " + mathRound(this._b) + ", " + this._roundA + ")";
         },
+
         toPercentageRgb: function() {
-            return { r: mathRound(bound01(this._r, 255) * 100) + "%", g: mathRound(bound01(this._g, 255) * 100) + "%", b: mathRound(bound01(this._b, 255) * 100) + "%", a: this._a };
+            return { r: mathRound(conversion.bound01(this._r, 255) * 100) + "%", g: mathRound(conversion.bound01(this._g, 255) * 100) + "%", b: mathRound(conversion.bound01(this._b, 255) * 100) + "%", a: this._a };
         },
+
         toPercentageRgbString: function() {
             return (this._a == 1) ?
-              "rgb("  + mathRound(bound01(this._r, 255) * 100) + "%, " + mathRound(bound01(this._g, 255) * 100) + "%, " + mathRound(bound01(this._b, 255) * 100) + "%)" :
-              "rgba(" + mathRound(bound01(this._r, 255) * 100) + "%, " + mathRound(bound01(this._g, 255) * 100) + "%, " + mathRound(bound01(this._b, 255) * 100) + "%, " + this._roundA + ")";
+              "rgb("  + mathRound(conversion.bound01(this._r, 255) * 100) + "%, " + mathRound(conversion.bound01(this._g, 255) * 100) + "%, " + mathRound(conversion.bound01(this._b, 255) * 100) + "%)" :
+              
+              "rgba(" + mathRound(conversion.bound01(this._r, 255) * 100) + "%, " + mathRound(conversion.bound01(this._g, 255) * 100) + "%, " + mathRound(conversion.bound01(this._b, 255) * 100) + "%, " + this._roundA + ")";
         },
+
         toName: function() {
             if (this._a === 0) {
                 return "transparent";
@@ -11055,8 +11381,9 @@ define('skylark-data-color/Color',[
 
             return hexNames[rgbToHex(this._r, this._g, this._b, true)] || false;
         },
+
         toFilter: function(secondColor) {
-            var hex8String = '#' + rgbaToHex(this._r, this._g, this._b, this._a);
+            var hex8String = '#' + conversion.rgbaToHex(this._r, this._g, this._b, this._a);
             var secondHex8String = hex8String;
             var gradientType = this._gradientType ? "GradientType = 1, " : "";
 
@@ -11067,6 +11394,7 @@ define('skylark-data-color/Color',[
 
             return "progid:DXImageTransform.Microsoft.gradient("+gradientType+"startColorstr="+hex8String+",endColorstr="+secondHex8String+")";
         },
+
         toString: function(format) {
             var formatSet = !!format;
             format = format || this._format;
@@ -11111,61 +11439,470 @@ define('skylark-data-color/Color',[
             return formattedString || this.toHexString();
         },
 
-        _applyModification: function(fn, args) {
-            var color = fn.apply(null, [this].concat([].slice.call(args)));
-            this._r = color._r;
-            this._g = color._g;
-            this._b = color._b;
-            this.setAlpha(color._a);
-            return this;
-        },
-        lighten: function() {
-            return this._applyModification(lighten, arguments);
-        },
-        brighten: function() {
-            return this._applyModification(brighten, arguments);
-        },
-        darken: function() {
-            return this._applyModification(darken, arguments);
-        },
-        desaturate: function() {
-            return this._applyModification(desaturate, arguments);
-        },
-        saturate: function() {
-            return this._applyModification(saturate, arguments);
-        },
-        greyscale: function() {
-            return this._applyModification(greyscale, arguments);
-        },
-        spin: function() {
-            return this._applyModification(spin, arguments);
+        // modification methods
+        // ----------------------
+        // Thanks to less.js for some of the basics here
+        // <https://github.com/cloudhead/less.js/blob/master/lib/less/functions.js>
+
+        /*
+         * Lighten the color a given amount, from 0 to 100. Providing 100 will always return white.
+         */
+        lighten: function(amount) {
+            amount = (amount === 0) ? 0 : (amount || 10);
+            var hsl = this.toHsl();
+            hsl.l += amount / 100;
+            hsl.l = clamp01(hsl.l);
+            return Color.fromHsl(hsl);
         },
 
-        _applyCombination: function(fn, args) {
-            return fn.apply(null, [this].concat([].slice.call(args)));
+        /*
+         * Brighten the color a given amount, from 0 to 100
+         */
+        brighten: function(amount) {
+            amount = (amount === 0) ? 0 : (amount || 10);
+            var rgb = this.toRgb();
+            rgb.r = mathMax(0, mathMin(255, rgb.r - mathRound(255 * - (amount / 100))));
+            rgb.g = mathMax(0, mathMin(255, rgb.g - mathRound(255 * - (amount / 100))));
+            rgb.b = mathMax(0, mathMin(255, rgb.b - mathRound(255 * - (amount / 100))));
+            return new Color(rgb);
         },
-        analogous: function() {
-            return this._applyCombination(analogous, arguments);
+
+        /*
+         * Darken the color a given amount, from 0 to 100. Providing 100 will always return black.
+         */
+        darken: function(amount) {
+            amount = (amount === 0) ? 0 : (amount || 10);
+            var hsl = this.toHsl();
+            hsl.l -= amount / 100;
+            hsl.l = clamp01(hsl.l);
+            return Color.fromHsl(hsl);
         },
+
+        /*
+         *  Desaturate the color a given amount, from 0 to 100. Providing 100 will is the same as calling greyscale.
+         */
+        desaturate: function(amount) {
+            amount = (amount === 0) ? 0 : (amount || 10);
+            var hsl = this.toHsl();
+            hsl.s -= amount / 100;
+            hsl.s = clamp01(hsl.s);
+            return Color.fromHsl(hsl);
+        },
+
+        /*
+         *  Saturate the color a given amount, from 0 to 100.
+         */
+        saturate: function(amount) {
+            amount = (amount === 0) ? 0 : (amount || 10);
+            var hsl = this.toHsl();
+            hsl.s += amount / 100;
+            hsl.s = clamp01(hsl.s);
+            return Color.fromHsl(hsl);
+        },
+
+        /*
+         * Completely desaturates a color into greyscale. Same as calling desaturate(100).
+         */
+        greyscale: function() {
+            return this.desaturate(100);
+        },
+
+        /*
+         * Spin the hue a given amount, from -360 to 360. Calling with 0, 360, or -360 will do nothing (since it sets the hue back to what it was before).
+         */
+        spin: function(amount) {
+            var hsl = this.toHsl();
+            var hue = (mathRound(hsl.h) + amount) % 360;
+            hsl.h = hue < 0 ? 360 + hue : hue;
+            return Color.fromHsl(hsl);
+        },
+
+
+        // combination methods
+
+        /*
+         * Finds analogous colors the color.
+         */
+        analogous: function(results, slices) {
+            results = results || 6;
+            slices = slices || 30;
+
+            var hsl = this.toHsl();
+            var part = 360 / slices;
+            var ret = [this];
+
+            for (hsl.h = ((hsl.h - (part * results >> 1)) + 720) % 360; --results; ) {
+                hsl.h = (hsl.h + part) % 360;
+                ret.push(Color.fromHsl(hsl));
+            }
+            return ret;
+        },
+
         complement: function() {
-            return this._applyCombination(complement, arguments);
+            var hsl = this.toHsl();
+            hsl.h = (hsl.h + 180) % 360;
+            return Color.fromHsl(hsl);
         },
-        monochromatic: function() {
-            return this._applyCombination(monochromatic, arguments);
+
+        /*
+         * Finds monochromatic colors to the color.
+         */
+        monochromatic: function(results) {
+            results = results || 6;
+            var hsv = this.toHsv();
+            var h = hsv.h, s = hsv.s, v = hsv.v;
+            var ret = [];
+            var modification = 1 / results;
+
+            while (results--) {
+                ret.push(Color.fromHsv({ h: h, s: s, v: v}));
+                v = (v + modification) % 1;
+            }
+
+            return ret;
         },
+
+
+        /*
+         * Generates a split complements of the color.
+         */
         splitcomplement: function() {
-            return this._applyCombination(splitcomplement, arguments);
+            var hsl = this.toHsl();
+            var h = hsl.h;
+            return [
+                this,
+                Color.fromHsl({ h: (h + 72) % 360, s: hsl.s, l: hsl.l}),
+                Color.fromHsl({ h: (h + 216) % 360, s: hsl.s, l: hsl.l})
+            ];
         },
+
+        /*
+         * Generates a color triad of the color.
+         */
         triad: function() {
-            return this._applyCombination(triad, arguments);
+            var hsl = this.toHsl();
+            var h = hsl.h;
+            return [
+                this,
+                Color.fromHsl({ h: (h + 120) % 360, s: hsl.s, l: hsl.l }),
+                Color.fromHsl({ h: (h + 240) % 360, s: hsl.s, l: hsl.l })
+            ];
         },
+
         tetrad: function() {
-            return this._applyCombination(tetrad, arguments);
+            var hsl = this.toHsl();
+            var h = hsl.h;
+            return [
+                this,
+                Color.fromHsl({ h: (h + 90) % 360, s: hsl.s, l: hsl.l }),
+                Color.fromHsl({ h: (h + 180) % 360, s: hsl.s, l: hsl.l }),
+                Color.fromHsl({ h: (h + 270) % 360, s: hsl.s, l: hsl.l })
+            ];
+        },
+
+
+        mix : function(color2,amount) {
+            amount = (amount === 0) ? 0 : (amount || 50);
+
+            var rgb1 = this.toRgb();
+            var rgb2 = color2.toRgb();
+
+            var p = amount / 100;
+            var w = p * 2 - 1;
+            var a = rgb2.a - rgb1.a;
+
+            var w1;
+
+            if (w * a == -1) {
+                w1 = w;
+            } else {
+                w1 = (w + a) / (1 + w * a);
+            }
+
+            w1 = (w1 + 1) / 2;
+
+            var w2 = 1 - w1;
+
+            var rgba = {
+                r: rgb2.r * w1 + rgb1.r * w2,
+                g: rgb2.g * w1 + rgb1.g * w2,
+                b: rgb2.b * w1 + rgb1.b * w2,
+                a: rgb2.a * p  + rgb1.a * (1 - p)
+            };
+
+            return new Color(rgba);
+
+        },
+
+        isValid : function(){
+            return true;
         }
 	});
 
+    // `equals`
+    // Can be called with any Color input
+    Color.equals = function (color1, color2) {
+        if (!color1 || !color2) { return false; }
+        color1 = Color.parse(color1);
+        color2 = Color.parse(color2);
+
+        return color1.toRgbString() == color2.toRgbString();
+    };
+    
+
+    Color.random = function() {
+        return Color.fromRatio({
+            r: mathRandom(),
+            g: mathRandom(),
+            b: mathRandom()
+        });
+    };
+
+    Color.fromRgba = function(r,g,b,a) {
+        return new Color({
+            r,
+            g,
+            b,
+            a
+        })  
+    };
+
+    Color.fromRgb = function(r,g,b) {
+        return new Color({
+            r,
+            g,
+            b
+        })  
+    };
+
+    Color.fromHsl = function(h,s,l,a) {
+        var rgb = conversion.hslToRgb(h,s,l)
+        return new Color(rgb)  
+    };
+
+    Color.fromHsv = function(h,s,v,a) {
+        var rgb = conversion.hsvToRgb(h,s,v)
+        return new Color(rgb)  
+    }; 
+
+    return skylark.attach("graphics.Color",Color);
+});
+
+define('skylark-graphics-color/parse',[
+    "skylark-langx-strings",
+    "./Color",
+    "./_names",
+    "./_conversion"
+],function(
+    strings,
+    Color,
+    names,
+    conversion
+){
+    var math = Math,
+        mathRound = math.round,
+        mathMin = math.min,
+        mathMax = math.max,
+        mathRandom = math.random;
+
+    var matchers = (function() {
+
+        // <http://www.w3.org/TR/css3-values/#integers>
+        var CSS_INTEGER = "[-\\+]?\\d+%?";
+
+        // <http://www.w3.org/TR/css3-values/#number-value>
+        var CSS_NUMBER = "[-\\+]?\\d*\\.\\d+%?";
+
+        // Allow positive/negative integer/number.  Don't capture the either/or, just the entire outcome.
+        var CSS_UNIT = "(?:" + CSS_NUMBER + ")|(?:" + CSS_INTEGER + ")";
+
+        // Actual matching.
+        // Parentheses and commas are optional, but not required.
+        // Whitespace can take the place of commas or opening paren
+        var PERMISSIVE_MATCH3 = "[\\s|\\(]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")\\s*\\)?";
+        var PERMISSIVE_MATCH4 = "[\\s|\\(]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")[,|\\s]+(" + CSS_UNIT + ")\\s*\\)?";
+
+        return {
+            rgb: new RegExp("rgb" + PERMISSIVE_MATCH3),
+            rgba: new RegExp("rgba" + PERMISSIVE_MATCH4),
+            hsl: new RegExp("hsl" + PERMISSIVE_MATCH3),
+            hsla: new RegExp("hsla" + PERMISSIVE_MATCH4),
+            hsv: new RegExp("hsv" + PERMISSIVE_MATCH3),
+            hsva: new RegExp("hsva" + PERMISSIVE_MATCH4),
+            hex3: /^([0-9a-fA-F]{1})([0-9a-fA-F]{1})([0-9a-fA-F]{1})$/,
+            hex6: /^([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/,
+            hex8: /^([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/,
+            hex3s: /^#([0-9a-fA-F]{1})([0-9a-fA-F]{1})([0-9a-fA-F]{1})$/,
+            hex6s: /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/,
+            hex8s: /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/
+        };
+    })();
 
 
+    // Replace a decimal with it's percentage value
+    function convertToPercentage(n) {
+        if (n <= 1) {
+            n = (n * 100) + "%";
+        }
+
+        return n;
+    }
+
+    // Parse a base-16 hex value into a base-10 integer
+    function parseIntFromHex(val) {
+        return parseInt(val, 16);
+    }
+        
+
+      // Converts a decimal to a hex value
+    function convertDecimalToHex(d) {
+        return Math.round(parseFloat(d) * 255).toString(16);
+    }
+
+    // Converts a hex value to a decimal
+    function convertHexToDecimal(h) {
+        return (parseIntFromHex(h) / 255);
+    }
+          
+    // `stringInputToObject`
+    // Permissive string parsing.  Take in a number of formats, and output an object
+    // based on detected format.  Returns `{ r, g, b }` or `{ h, s, l }` or `{ h, s, v}`
+    function stringInputToObject(color) {
+
+        color = strings.trim(color).toLowerCase();
+        var named = false;
+        if (names[color]) {
+            color = names[color];
+            named = true;
+        }
+        else if (color == 'transparent') {
+            return { r: 0, g: 0, b: 0, a: 0, format: "name" };
+        }
+
+        // Try to match string input using regular expressions.
+        // Keep most of the number bounding out of this function - don't worry about [0,1] or [0,100] or [0,360]
+        // Just return an object and let the conversion functions handle that.
+        // This way the result will be the same whether the tinycolor is initialized with string or object.
+        var match;
+        if ((match = matchers.rgb.exec(color))) {
+            return { r: match[1], g: match[2], b: match[3] };
+        }
+        if ((match = matchers.rgba.exec(color))) {
+            return { r: match[1], g: match[2], b: match[3], a: match[4] };
+        }
+        if ((match = matchers.hsl.exec(color))) {
+            return { h: match[1], s: match[2], l: match[3] };
+        }
+        if ((match = matchers.hsla.exec(color))) {
+            return { h: match[1], s: match[2], l: match[3], a: match[4] };
+        }
+        if ((match = matchers.hsv.exec(color))) {
+            return { h: match[1], s: match[2], v: match[3] };
+        }
+        if ((match = matchers.hsva.exec(color))) {
+            return { h: match[1], s: match[2], v: match[3], a: match[4] };
+        }
+        if ((match = matchers.hex8.exec(color)) || (match = matchers.hex8s.exec(color))) {
+            return {
+                a: convertHexToDecimal(match[1]),
+                r: parseIntFromHex(match[2]),
+                g: parseIntFromHex(match[3]),
+                b: parseIntFromHex(match[4]),
+                format: named ? "name" : "hex8"
+            };
+        }
+        if ((match = matchers.hex6.exec(color)) || (match = matchers.hex6s.exec(color))) {
+            return {
+                r: parseIntFromHex(match[1]),
+                g: parseIntFromHex(match[2]),
+                b: parseIntFromHex(match[3]),
+                format: named ? "name" : "hex"
+            };
+        }
+        if ((match = matchers.hex3.exec(color)) || (match = matchers.hex3s.exec(color))) {
+            return {
+                r: parseIntFromHex(match[1] + '' + match[1]),
+                g: parseIntFromHex(match[2] + '' + match[2]),
+                b: parseIntFromHex(match[3] + '' + match[3]),
+                format: named ? "name" : "hex"
+            };
+        }
+
+        return false;
+    }
+
+    // Given a string or object, convert that input to RGB
+    // Possible string inputs:
+    //
+    //     "red"
+    //     "#f00" or "f00"
+    //     "#ff0000" or "ff0000"
+    //     "#ff000000" or "ff000000"
+    //     "rgb 255 0 0" or "rgb (255, 0, 0)"
+    //     "rgb 1.0 0 0" or "rgb (1, 0, 0)"
+    //     "rgba (255, 0, 0, 1)" or "rgba 255, 0, 0, 1"
+    //     "rgba (1.0, 0, 0, 1)" or "rgba 1.0, 0, 0, 1"
+    //     "hsl(0, 100%, 50%)" or "hsl 0 100% 50%"
+    //     "hsla(0, 100%, 50%, 1)" or "hsla 0 100% 50%, 1"
+    //     "hsv(0, 100%, 100%)" or "hsv 0 100% 100%"
+    //
+    function parse(color) {
+        if (color instanceof Color) {
+            return color;
+        }
+
+        var rgb = { r: 0, g: 0, b: 0 };
+        var a = 1;
+        var ok = false;
+        var format = false;
+
+        if (typeof color == "string") {
+            color = stringInputToObject(color);
+        }
+
+        if (typeof color == "object") {
+            if (color.hasOwnProperty("r") && color.hasOwnProperty("g") && color.hasOwnProperty("b")) {
+                rgb = conversion.rgbToRgb(color.r, color.g, color.b);
+                ok = true;
+                format = String(color.r).substr(-1) === "%" ? "prgb" : "rgb";
+            }
+            else if (color.hasOwnProperty("h") && color.hasOwnProperty("s") && color.hasOwnProperty("v")) {
+                color.s = convertToPercentage(color.s);
+                color.v = convertToPercentage(color.v);
+                rgb = conversion.hsvToRgb(color.h, color.s, color.v);
+                ok = true;
+                format = "hsv";
+            }
+            else if (color.hasOwnProperty("h") && color.hasOwnProperty("s") && color.hasOwnProperty("l")) {
+                color.s = convertToPercentage(color.s);
+                color.l = convertToPercentage(color.l);
+                rgb =  conversion.hslToRgb(color.h, color.s, color.l);
+                ok = true;
+                format = "hsl";
+            }
+
+            if (color.hasOwnProperty("a")) {
+                a = color.a;
+            }
+        }
+
+
+        return new Color(
+            {
+                ok: ok,
+                r: mathMin(255, mathMax(rgb.r, 0)),
+                g: mathMin(255, mathMax(rgb.g, 0)),
+                b: mathMin(255, mathMax(rgb.b, 0)),
+                a: a
+            },
+            {
+                format: color.format || format,                
+            }
+        );
+
+    }
+
+    /*
     // If input is an object, force 1 into "1.0" to handle ratios properly
     // String input requires "1.0" as input, so 1 will be treated as 1
     Color.fromRatio = function(color, opts) {
@@ -11184,189 +11921,37 @@ define('skylark-data-color/Color',[
             color = newColor;
         }
 
-        return Color(color, opts);
+        return new Color(color, opts);
     };
+    */
 
-    // `equals`
-    // Can be called with any Color input
-    Color.equals = function (color1, color2) {
-        if (!color1 || !color2) { return false; }
-        return Color(color1).toRgbString() == Color(color2).toRgbString();
-    };
-    
-    Color.random = function() {
-        return Color.fromRatio({
-            r: mathRandom(),
-            g: mathRandom(),
-            b: mathRandom()
-        });
-    };
+    return Color.parse = parse;
+	
+});
+define('skylark-graphics-color/named',[
+	"./Color",
+	"./_names",
+	"./parse"
+],function(
+	Color,
+	parse,
+	_names
+){
+	var named = {};
 
-   // Modification Functions
-    // ----------------------
-    // Thanks to less.js for some of the basics here
-    // <https://github.com/cloudhead/less.js/blob/master/lib/less/functions.js>
+	for (var name in _names) {
+		named[name] = Color.parse(_names[name]);
+	}
 
-    function desaturate(color, amount) {
-        amount = (amount === 0) ? 0 : (amount || 10);
-        var hsl = Color(color).toHsl();
-        hsl.s -= amount / 100;
-        hsl.s = clamp01(hsl.s);
-        return Color(hsl);
-    }
-
-    function saturate(color, amount) {
-        amount = (amount === 0) ? 0 : (amount || 10);
-        var hsl = Color(color).toHsl();
-        hsl.s += amount / 100;
-        hsl.s = clamp01(hsl.s);
-        return Color(hsl);
-    }
-
-    function greyscale(color) {
-        return Color(color).desaturate(100);
-    }
-
-    function lighten (color, amount) {
-        amount = (amount === 0) ? 0 : (amount || 10);
-        var hsl = Color(color).toHsl();
-        hsl.l += amount / 100;
-        hsl.l = clamp01(hsl.l);
-        return Color(hsl);
-    }
-
-    function brighten(color, amount) {
-        amount = (amount === 0) ? 0 : (amount || 10);
-        var rgb = Color(color).toRgb();
-        rgb.r = mathMax(0, mathMin(255, rgb.r - mathRound(255 * - (amount / 100))));
-        rgb.g = mathMax(0, mathMin(255, rgb.g - mathRound(255 * - (amount / 100))));
-        rgb.b = mathMax(0, mathMin(255, rgb.b - mathRound(255 * - (amount / 100))));
-        return Color(rgb);
-    }
-
-    function darken (color, amount) {
-        amount = (amount === 0) ? 0 : (amount || 10);
-        var hsl = Color(color).toHsl();
-        hsl.l -= amount / 100;
-        hsl.l = clamp01(hsl.l);
-        return Color(hsl);
-    }
-
-    // Spin takes a positive or negative amount within [-360, 360] indicating the change of hue.
-    // Values outside of this range will be wrapped into this range.
-    function spin(color, amount) {
-        var hsl = Color(color).toHsl();
-        var hue = (mathRound(hsl.h) + amount) % 360;
-        hsl.h = hue < 0 ? 360 + hue : hue;
-        return Color(hsl);
-    }
-
-    // Combination Functions
-    // ---------------------
-    // Thanks to jQuery xColor for some of the ideas behind these
-    // <https://github.com/infusion/jQuery-xcolor/blob/master/jquery.xcolor.js>
-
-    function complement(color) {
-        var hsl = Color(color).toHsl();
-        hsl.h = (hsl.h + 180) % 360;
-        return Color(hsl);
-    }
-
-    function triad(color) {
-        var hsl = Color(color).toHsl();
-        var h = hsl.h;
-        return [
-            Color(color),
-            Color({ h: (h + 120) % 360, s: hsl.s, l: hsl.l }),
-            Color({ h: (h + 240) % 360, s: hsl.s, l: hsl.l })
-        ];
-    }
-
-    function tetrad(color) {
-        var hsl = Color(color).toHsl();
-        var h = hsl.h;
-        return [
-            Color(color),
-            Color({ h: (h + 90) % 360, s: hsl.s, l: hsl.l }),
-            Color({ h: (h + 180) % 360, s: hsl.s, l: hsl.l }),
-            Color({ h: (h + 270) % 360, s: hsl.s, l: hsl.l })
-        ];
-    }
-
-    function splitcomplement(color) {
-        var hsl = Color(color).toHsl();
-        var h = hsl.h;
-        return [
-            Color(color),
-            Color({ h: (h + 72) % 360, s: hsl.s, l: hsl.l}),
-            Color({ h: (h + 216) % 360, s: hsl.s, l: hsl.l})
-        ];
-    }
-
-    function analogous(color, results, slices) {
-        results = results || 6;
-        slices = slices || 30;
-
-        var hsl = Color(color).toHsl();
-        var part = 360 / slices;
-        var ret = [Color(color)];
-
-        for (hsl.h = ((hsl.h - (part * results >> 1)) + 720) % 360; --results; ) {
-            hsl.h = (hsl.h + part) % 360;
-            ret.push(Color(hsl));
-        }
-        return ret;
-    }
-
-    function monochromatic(color, results) {
-        results = results || 6;
-        var hsv = Color(color).toHsv();
-        var h = hsv.h, s = hsv.s, v = hsv.v;
-        var ret = [];
-        var modification = 1 / results;
-
-        while (results--) {
-            ret.push(Color({ h: h, s: s, v: v}));
-            v = (v + modification) % 1;
-        }
-
-        return ret;
-    }
-
+	return Color.named = named;
+});
+define('skylark-graphics-color/misc',[
+	"./Color"
+],function(
+	Color
+){
     // Utility Functions
     // ---------------------
-
-    Color.mix = function(color1, color2, amount) {
-        amount = (amount === 0) ? 0 : (amount || 50);
-
-        var rgb1 = Color(color1).toRgb();
-        var rgb2 = Color(color2).toRgb();
-
-        var p = amount / 100;
-        var w = p * 2 - 1;
-        var a = rgb2.a - rgb1.a;
-
-        var w1;
-
-        if (w * a == -1) {
-            w1 = w;
-        } else {
-            w1 = (w + a) / (1 + w * a);
-        }
-
-        w1 = (w1 + 1) / 2;
-
-        var w2 = 1 - w1;
-
-        var rgba = {
-            r: rgb2.r * w1 + rgb1.r * w2,
-            g: rgb2.g * w1 + rgb1.g * w2,
-            b: rgb2.b * w1 + rgb1.b * w2,
-            a: rgb2.a * p  + rgb1.a * (1 - p)
-        };
-
-        return Color(rgba);
-    };
 
 
     // Readability Functions
@@ -11377,9 +11962,9 @@ define('skylark-data-color/Color',[
     // Analyze the 2 colors and returns an object with the following properties:
     //    `brightness`: difference in brightness between the two colors
     //    `color`: difference in color/hue between the two colors
-    Color.readability = function(color1, color2) {
-        var c1 = Color(color1);
-        var c2 = Color(color2);
+    function readability(color1, color2) {
+        var c1 = color1;
+        var c2 = color2;
         var rgb1 = c1.toRgb();
         var rgb2 = c2.toRgb();
         var brightnessA = c1.getBrightness();
@@ -11394,24 +11979,24 @@ define('skylark-data-color/Color',[
             brightness: Math.abs(brightnessA - brightnessB),
             color: colorDiff
         };
-    };
+    }
 
     // `readable`
     // http://www.w3.org/TR/AERT#color-contrast
     // Ensure that foreground and background color combinations provide sufficient contrast.
     // *Example*
     //    Color.isReadable("#000", "#111") => false
-    Color.isReadable = function(color1, color2) {
-        var readability = Color.readability(color1, color2);
+    function isReadable(color1, color2) {
+        var readability = readability(color1, color2);
         return readability.brightness > 125 && readability.color > 500;
-    };
+    }
 
     // `mostReadable`
     // Given a base color and a list of possible foreground or background
     // colors for that base, returns the most readable color.
     // *Example*
     //    Color.mostReadable("#123", ["#fff", "#000"]) => "#000"
-    Color.mostReadable = function(baseColor, colorList) {
+    function mostReadable(baseColor, colorList) {
         var bestColor = null;
         var bestScore = 0;
         var bestIsReadable = false;
@@ -11420,7 +12005,7 @@ define('skylark-data-color/Color',[
             // We normalize both around the "acceptable" breaking point,
             // but rank brightness constrast higher than hue.
 
-            var readability = Color.readability(baseColor, colorList[i]);
+            var readability = readability(baseColor, colorList[i]);
             var readable = readability.brightness > 125 && readability.color > 500;
             var score = 3 * (readability.brightness / 125) + (readability.color / 500);
 
@@ -11429,15 +12014,29 @@ define('skylark-data-color/Color',[
                 ((! readable) && (! bestIsReadable) && score > bestScore)) {
                 bestIsReadable = readable;
                 bestScore = score;
-                bestColor = Color(colorList[i]);
+                bestColor = new Color(colorList[i]);
             }
         }
         return bestColor;
-    };
+    }
 
+    return  {
+        readability,
+        isReadable,
+        mostReadable
+    };
+	
+});
+define('skylark-graphics-color/main',[
+    "./Color",
+    "./named",
+    "./misc",
+    "./parse"
+], function(Color) {
 
 	return Color;
 });
+define('skylark-graphics-color', ['skylark-graphics-color/main'], function (main) { return main; });
 
 define('skylark-domx-colorpicker/draggable',[
    "skylark-langx/skylark",
@@ -11551,10 +12150,9 @@ define('skylark-domx-colorpicker/ColorPicker',[
     "skylark-domx-eventer",
     "skylark-domx-styler",
     "skylark-domx-fx",
-    "skylark-data-color/colors",
-    "skylark-data-color/Color",
+    "skylark-graphics-color",
     "./draggable"
-],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,colors, Color,draggable) {
+],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,Color,draggable) {
     "use strict";
 
     var noop = langx.noop;
@@ -11666,7 +12264,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
         for (var i = 0; i < p.length; i++) {
             var current = p[i];
             if(current) {
-                var tiny = colors.Color(current);
+                var tiny = Color.parse(current);
                 var c = tiny.toHsl().l < 0.5 ? "sp-thumb-el sp-thumb-dark" : "sp-thumb-el sp-thumb-light";
                 c += (Color.equals(color, current)) ? " sp-thumb-active" : "";
                 var formattedString = tiny.toString(opts.preferredFormat || "rgb");
@@ -11789,7 +12387,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     paletteLookup = {};
                     for (var i = 0; i < paletteArray.length; i++) {
                         for (var j = 0; j < paletteArray[i].length; j++) {
-                            var rgb = Color(paletteArray[i][j]).toRgbString();
+                            var rgb = Color.parse(paletteArray[i][j]).toRgbString();
                             paletteLookup[rgb] = true;
                         }
                     }
@@ -11978,7 +12576,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     // In case color was black - update the preview UI and set the format
                     // since the set function will not run (default color is black).
                     updateUI();
-                    currentPreferredFormat = opts.preferredFormat || Color(initialColor).format;
+                    currentPreferredFormat = opts.preferredFormat || Color.parse(initialColor).format;
 
                     addColorToSelectionPalette(initialColor);
                 }
@@ -12042,7 +12640,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
 
             function addColorToSelectionPalette(color) {
                 if (showSelectionPalette) {
-                    var rgb = Color(color).toRgbString();
+                    var rgb = Color.parse(color).toRgbString();
                     if (!paletteLookup[rgb] && langx.inArray(rgb, selectionPalette) === -1) {
                         selectionPalette.push(rgb);
                         while(selectionPalette.length > maxSelectionSize) {
@@ -12063,7 +12661,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                 var unique = [];
                 if (opts.showPalette) {
                     for (var i = 0; i < selectionPalette.length; i++) {
-                        var rgb = Color(selectionPalette[i]).toRgbString();
+                        var rgb = Color.parse(selectionPalette[i]).toRgbString();
 
                         if (!paletteLookup[rgb]) {
                             unique.push(selectionPalette[i]);
@@ -12125,7 +12723,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     updateOriginalInput();
                 }
                 else {
-                    var tiny = Color(value);
+                    var tiny = Color.parse(value);
                     if (tiny.isValid()) {
                         set(tiny);
                         move();
@@ -12237,7 +12835,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     isEmpty = true;
                 } else {
                     isEmpty = false;
-                    newColor = colors.Color(color);
+                    newColor = Color.parse(color);
                     newHsv = newColor.toHsv();
 
                     currentHue = (newHsv.h % 360) / 360;
@@ -12259,12 +12857,21 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     return null;
                 }
 
-                return Color.fromRatio({
+
+                /*
+                return fromRatio({
                     h: currentHue,
                     s: currentSaturation,
                     v: currentValue,
                     a: Math.round(currentAlpha * 1000) / 1000
                 }, { format: opts.format || currentPreferredFormat });
+                */
+                return Color.parse({
+                    h: currentHue * 360,
+                    s: currentSaturation,
+                    v: currentValue,
+                    a: Math.round(currentAlpha * 1000) / 1000
+                });
             }
 
             function isValid() {
@@ -12285,7 +12892,12 @@ define('skylark-domx-colorpicker/ColorPicker',[
                 updateHelperLocations();
 
                 // Update dragger background color (gradients take care of saturation and value).
-                var flatColor = Color.fromRatio({ h: currentHue, s: 1, v: 1 });
+                //var flatColor = Color.fromRatio({ h: currentHue, s: 1, v: 1 });
+                var flatColor = Color.parse({ 
+                    h: currentHue * 360, 
+                    s: 1, 
+                    v: 1 
+                });
                 dragger.css("background-color", flatColor.toHexString());
 
                 // Get a format that alpha will be included in (hex and names ignore alpha)
@@ -12317,11 +12929,11 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     if (opts.showAlpha) {
                         var rgb = realColor.toRgb();
                         rgb.a = 0;
-                        var realAlpha = Color(rgb).toRgbString();
+                        var realAlpha = Color.parse(rgb).toRgbString();
                         var gradient = "linear-gradient(left, " + realAlpha + ", " + realHex + ")";
 
                         if (browser.isIE) {
-                            alphaSliderInner.css("filter", Color(realAlpha).toFilter({ gradientType: 1 }, realHex));
+                            alphaSliderInner.css("filter", Color.parse(realAlpha).toFilter({ gradientType: 1 }, realHex));
                         }
                         else {
                             alphaSliderInner.css("background", "-webkit-" + gradient);

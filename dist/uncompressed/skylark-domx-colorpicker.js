@@ -198,10 +198,9 @@ define('skylark-domx-colorpicker/ColorPicker',[
     "skylark-domx-eventer",
     "skylark-domx-styler",
     "skylark-domx-fx",
-    "skylark-data-color/colors",
-    "skylark-data-color/Color",
+    "skylark-graphics-color",
     "./draggable"
-],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,colors, Color,draggable) {
+],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,Color,draggable) {
     "use strict";
 
     var noop = langx.noop;
@@ -313,7 +312,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
         for (var i = 0; i < p.length; i++) {
             var current = p[i];
             if(current) {
-                var tiny = colors.Color(current);
+                var tiny = Color.parse(current);
                 var c = tiny.toHsl().l < 0.5 ? "sp-thumb-el sp-thumb-dark" : "sp-thumb-el sp-thumb-light";
                 c += (Color.equals(color, current)) ? " sp-thumb-active" : "";
                 var formattedString = tiny.toString(opts.preferredFormat || "rgb");
@@ -436,7 +435,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     paletteLookup = {};
                     for (var i = 0; i < paletteArray.length; i++) {
                         for (var j = 0; j < paletteArray[i].length; j++) {
-                            var rgb = Color(paletteArray[i][j]).toRgbString();
+                            var rgb = Color.parse(paletteArray[i][j]).toRgbString();
                             paletteLookup[rgb] = true;
                         }
                     }
@@ -625,7 +624,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     // In case color was black - update the preview UI and set the format
                     // since the set function will not run (default color is black).
                     updateUI();
-                    currentPreferredFormat = opts.preferredFormat || Color(initialColor).format;
+                    currentPreferredFormat = opts.preferredFormat || Color.parse(initialColor).format;
 
                     addColorToSelectionPalette(initialColor);
                 }
@@ -689,7 +688,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
 
             function addColorToSelectionPalette(color) {
                 if (showSelectionPalette) {
-                    var rgb = Color(color).toRgbString();
+                    var rgb = Color.parse(color).toRgbString();
                     if (!paletteLookup[rgb] && langx.inArray(rgb, selectionPalette) === -1) {
                         selectionPalette.push(rgb);
                         while(selectionPalette.length > maxSelectionSize) {
@@ -710,7 +709,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                 var unique = [];
                 if (opts.showPalette) {
                     for (var i = 0; i < selectionPalette.length; i++) {
-                        var rgb = Color(selectionPalette[i]).toRgbString();
+                        var rgb = Color.parse(selectionPalette[i]).toRgbString();
 
                         if (!paletteLookup[rgb]) {
                             unique.push(selectionPalette[i]);
@@ -772,7 +771,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     updateOriginalInput();
                 }
                 else {
-                    var tiny = Color(value);
+                    var tiny = Color.parse(value);
                     if (tiny.isValid()) {
                         set(tiny);
                         move();
@@ -884,7 +883,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     isEmpty = true;
                 } else {
                     isEmpty = false;
-                    newColor = colors.Color(color);
+                    newColor = Color.parse(color);
                     newHsv = newColor.toHsv();
 
                     currentHue = (newHsv.h % 360) / 360;
@@ -906,12 +905,21 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     return null;
                 }
 
-                return Color.fromRatio({
+
+                /*
+                return fromRatio({
                     h: currentHue,
                     s: currentSaturation,
                     v: currentValue,
                     a: Math.round(currentAlpha * 1000) / 1000
                 }, { format: opts.format || currentPreferredFormat });
+                */
+                return Color.parse({
+                    h: currentHue * 360,
+                    s: currentSaturation,
+                    v: currentValue,
+                    a: Math.round(currentAlpha * 1000) / 1000
+                });
             }
 
             function isValid() {
@@ -932,7 +940,12 @@ define('skylark-domx-colorpicker/ColorPicker',[
                 updateHelperLocations();
 
                 // Update dragger background color (gradients take care of saturation and value).
-                var flatColor = Color.fromRatio({ h: currentHue, s: 1, v: 1 });
+                //var flatColor = Color.fromRatio({ h: currentHue, s: 1, v: 1 });
+                var flatColor = Color.parse({ 
+                    h: currentHue * 360, 
+                    s: 1, 
+                    v: 1 
+                });
                 dragger.css("background-color", flatColor.toHexString());
 
                 // Get a format that alpha will be included in (hex and names ignore alpha)
@@ -964,11 +977,11 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     if (opts.showAlpha) {
                         var rgb = realColor.toRgb();
                         rgb.a = 0;
-                        var realAlpha = Color(rgb).toRgbString();
+                        var realAlpha = Color.parse(rgb).toRgbString();
                         var gradient = "linear-gradient(left, " + realAlpha + ", " + realHex + ")";
 
                         if (browser.isIE) {
-                            alphaSliderInner.css("filter", Color(realAlpha).toFilter({ gradientType: 1 }, realHex));
+                            alphaSliderInner.css("filter", Color.parse(realAlpha).toFilter({ gradientType: 1 }, realHex));
                         }
                         else {
                             alphaSliderInner.css("background", "-webkit-" + gradient);
