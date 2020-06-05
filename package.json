@@ -23,6 +23,7 @@
     "skylark-domx-eventer": "git+https://github.com/skylark-domx/skylark-domx-eventer.git#master",
     "skylark-domx-fx": "git+https://github.com/skylark-domx/skylark-domx-fx.git#master",
     "skylark-domx-interact": "git+https://github.com/skylark-domx/skylark-domx-interact.git#master",
+    "skylark-domx-popups": "git+https://github.com/skylark-domx/skylark-domx-popups.git#master",
     "skylark-domx-query": "git+https://github.com/skylark-domx/skylark-domx-query.git#master",
     "skylark-domx-styler": "git+https://github.com/skylark-domx/skylark-domx-styler.git#master",
     "skylark-graphics-color": "git+https://github.com/skylark-graphics/skylark-graphics-color.git#master",

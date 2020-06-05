@@ -8,56 +8,16 @@ define([
     "skylark-domx-eventer",
     "skylark-domx-styler",
     "skylark-domx-fx",
+    "skylark-domx-plugins",
+    "skylark-domx-popups",
     "skylark-graphics-color",
     "./draggable"
-],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,Color,draggable) {
+],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,plugins,popups,Color,draggable) {
     "use strict";
 
     var noop = langx.noop;
 
-    var defaultOpts = {
-
-        // Callbacks
-        beforeShow: noop,
-        move: noop,
-        change: noop,
-        show: noop,
-        hide: noop,
-
-        // Options
-        color: false,
-        flat: false,
-        showInput: false,
-        allowEmpty: false,
-        showButtons: true,
-        clickoutFiresChange: true,
-        showInitial: false,
-        showPalette: false,
-        showPaletteOnly: false,
-        hideAfterPaletteSelect: false,
-        togglePaletteOnly: false,
-        showSelectionPalette: true,
-        localStorageKey: false,
-        appendTo: "body",
-        maxSelectionSize: 7,
-        cancelText: "cancel",
-        chooseText: "choose",
-        togglePaletteMoreText: "more",
-        togglePaletteLessText: "less",
-        clearText: "Clear Color Selection",
-        noColorSelectedText: "No Color Selected",
-        preferredFormat: false,
-        className: "", // Deprecated - use containerClassName and replacerClassName instead.
-        containerClassName: "",
-        replacerClassName: "",
-        showAlpha: false,
-        theme: "sp-light",
-        palette: [["#ffffff", "#000000", "#ff0000", "#ff8000", "#ffff00", "#008000", "#0000ff", "#4b0082", "#9400d3"]],
-        selectionPalette: [],
-        disabled: false,
-        offset: null
-    },
-    pickers = [],
+    var pickers = [],
     replaceInput = [
         "<div class='sp-replacer'>",
             "<div class='sp-preview'><div class='sp-preview-inner'></div></div>",
@@ -149,32 +109,68 @@ define([
         }
     }
 
-    function instanceOptions(o, callbackContext) {
-        var opts = langx.mixin({}, defaultOpts, o);
-        opts.callbacks = {
-            'move': bind(opts.move, callbackContext),
-            'change': bind(opts.change, callbackContext),
-            'show': bind(opts.show, callbackContext),
-            'hide': bind(opts.hide, callbackContext),
-            'beforeShow': bind(opts.beforeShow, callbackContext)
-        };
 
-        return opts;
-    }
-
-
-
-    var ColorPicker = langx.Evented.inherit({
+    var ColorPicker = plugins.Plugin.inherit({
         klassName : "ColorPicker",
 
-        init:function (element, o) {
+        pluginName : "domx.colorPicker",
 
-            var opts = instanceOptions(o, element),
+        options : {
+
+            // Callbacks
+            beforeShow: noop,
+            move: noop,
+            change: noop,
+            show: noop,
+            hide: noop,
+
+            // Options
+            color: false,
+            flat: false,
+            showInput: false,
+            allowEmpty: false,
+            showButtons: true,
+            clickoutFiresChange: true,
+            showInitial: false,
+            showPalette: false,
+            showPaletteOnly: false,
+            hideAfterPaletteSelect: false,
+            togglePaletteOnly: false,
+            showSelectionPalette: true,
+            localStorageKey: false,
+            appendTo: "body",
+            maxSelectionSize: 7,
+            cancelText: "cancel",
+            chooseText: "choose",
+            togglePaletteMoreText: "more",
+            togglePaletteLessText: "less",
+            clearText: "Clear Color Selection",
+            noColorSelectedText: "No Color Selected",
+            preferredFormat: false,
+            className: "", // Deprecated - use containerClassName and replacerClassName instead.
+            containerClassName: "",
+            replacerClassName: "",
+            showAlpha: false,
+            theme: "sp-light",
+            palette: [
+                ["#ffffff", "#000000", "#ff0000", "#ff8000", "#ffff00", "#008000", "#0000ff", "#4b0082", "#9400d3"]
+            ],
+            selectionPalette: [],
+            disabled: false,
+            offset: null
+
+        },
+
+         _construct: function(elm, options) {
+            this.overrided(elm,options);
+
+
+
+            var opts = this.options,
+                element = this._elm,
                 flat = opts.flat,
                 showSelectionPalette = opts.showSelectionPalette,
-                localStorageKey = opts.localStorageKey,
                 theme = opts.theme,
-                callbacks = opts.callbacks,
                 resize = langx.debounce(reflow, 10),
                 visible = false,
                 isDragging = false,
@@ -197,6 +193,15 @@ define([
                 maxSelectionSize = opts.maxSelectionSize,
                 draggingClass = "sp-dragging",
                 shiftMovementDirection = null;
+
+
+            var callbacks = opts.callbacks = {
+                'move': bind(opts.move, elm),
+                'change': bind(opts.change, elm),
+                'show': bind(opts.show, elm),
+                'hide': bind(opts.hide, elm),
+                'beforeShow': bind(opts.beforeShow, elm)
+            };
 
             var doc = element.ownerDocument,
                 body = doc.body,
@@ -293,8 +298,6 @@ define([
 
                     appendTo.append(container);
                 }
-
-                updateSelectionPaletteFromStorage();
 
                 offsetElement.on("click.ColorPicker touchstart.ColorPicker", function (e) {
                     if (!disabled) {
@@ -473,28 +476,6 @@ define([
                 initialColorContainer.on(paletteEvent, ".sp-thumb-el:nth-child(1)", { ignore: true }, paletteElementClick);
             }
 
-            function updateSelectionPaletteFromStorage() {
-
-                if (localStorageKey && window.localStorage) {
-
-                    // Migrate old palettes over to new format.  May want to remove this eventually.
-                    try {
-                        var oldPalette = window.localStorage[localStorageKey].split(",#");
-                        if (oldPalette.length > 1) {
-                            delete window.localStorage[localStorageKey];
-                            langx.each(oldPalette, function(i, c) {
-                                 addColorToSelectionPalette(c);
-                            });
-                        }
-                    }
-                    catch(e) { }
-
-                    try {
-                        selectionPalette = window.localStorage[localStorageKey].split(";");
-                    }
-                    catch (e) { }
-                }
-            }
 
             function addColorToSelectionPalette(color) {
                 if (showSelectionPalette) {
@@ -504,13 +485,6 @@ define([
                         while(selectionPalette.length > maxSelectionSize) {
                             selectionPalette.shift();
                         }
-                    }
-
-                    if (localStorageKey && window.localStorage) {
-                        try {
-                            window.localStorage[localStorageKey] = selectionPalette.join(";");
-                        }
-                        catch(e) { }
                     }
                 }
             }
@@ -537,8 +511,6 @@ define([
                 var html = langx.map(paletteArray, function (palette, i) {
                     return paletteTemplate(palette, currentColor, "sp-palette-row sp-palette-row-" + i, opts);
                 });
-
-                updateSelectionPaletteFromStorage();
 
                 if (selectionPalette) {
                     html.push(paletteTemplate(getUniqueSelectionPalette(), currentColor, "sp-palette-row sp-palette-row-selection", opts));
@@ -593,6 +565,31 @@ define([
                 }
             }
 
+
+            function onkeydown(e) {
+                // Close on ESC
+                if (e.keyCode === 27) {
+                    hide();
+                }
+            }
+
+            function clickout(e) {
+                // Return on right click.
+                if (e.button == 2) { return; }
+
+                // If a drag event was happening during the mouseup, don't hide
+                // on click.
+                if (isDragging) { return; }
+
+                if (clickoutFiresChange) {
+                    updateOriginalInput(true);
+                }
+                else {
+                    revert();
+                }
+                hide();
+            }
+
             function toggle() {
                 if (visible) {
                     hide();
@@ -634,31 +631,6 @@ define([
                 callbacks.show(colorOnShow);
                 boundElement.trigger('show.ColorPicker', [ colorOnShow ]);
             }
-
-            function onkeydown(e) {
-                // Close on ESC
-                if (e.keyCode === 27) {
-                    hide();
-                }
-            }
-
-            function clickout(e) {
-                // Return on right click.
-                if (e.button == 2) { return; }
-
-                // If a drag event was happening during the mouseup, don't hide
-                // on click.
-                if (isDragging) { return; }
-
-                if (clickoutFiresChange) {
-                    updateOriginalInput(true);
-                }
-                else {
-                    revert();
-                }
-                hide();
-            }
-
             function hide() {
                 // Return if hiding is unnecessary
                 if (!visible || flat) { return; }
@@ -902,7 +874,7 @@ define([
                     if (opts.offset) {
                         container.offset(opts.offset);
                     } else {
-                        container.offset(getOffset(container, offsetElement));
+                        container.offset(popups.calcOffset(container[0], offsetElement[0]));
                     }
                 }
 
@@ -959,7 +931,7 @@ define([
 
             initialize();
 
-            var spect = {
+            langx.mixin(this, {
                 show: show,
                 hide: hide,
                 toggle: toggle,
@@ -975,51 +947,12 @@ define([
                 get: get,
                 destroy: destroy,
                 container: container
-            };
-
-            spect.id = pickers.push(spect) - 1;
-
-            return spect;
+            });
         }
     });
 
 
-    /**
-    * checkOffset - get the offset below/above and left/right element depending on screen position
-    * Thanks https://github.com/jquery/jquery-ui/blob/master/ui/jquery.ui.datepicker.js
-    */
-    function getOffset(picker, input) {
-        var extraY = 0;
-        var dpWidth = picker.outerWidth();
-        var dpHeight = picker.outerHeight();
-        var inputHeight = input.outerHeight();
-        var doc = picker[0].ownerDocument;
-        var docElem = doc.documentElement;
-        var viewWidth = docElem.clientWidth + $(doc).scrollLeft();
-        var viewHeight = docElem.clientHeight + $(doc).scrollTop();
-        var offset = input.offset();
-        var offsetLeft = offset.left;
-        var offsetTop = offset.top;
-
-        offsetTop += inputHeight;
-
-        offsetLeft -=
-            Math.min(offsetLeft, (offsetLeft + dpWidth > viewWidth && viewWidth > dpWidth) ?
-            Math.abs(offsetLeft + dpWidth - viewWidth) : 0);
-
-        offsetTop -=
-            Math.min(offsetTop, ((offsetTop + dpHeight > viewHeight && viewHeight > dpHeight) ?
-            Math.abs(dpHeight + inputHeight - extraY) : extraY));
-
-        return {
-            top: offsetTop,
-            bottom: offset.bottom,
-            left: offsetLeft,
-            right: offset.right,
-            width: offset.width,
-            height: offset.height
-        };
-    }
+    plugins.register(ColorPicker,"colorPicker");
 
     /**
     * stopPropagation - makes the code only doing this a little easier to read in line
@@ -1041,65 +974,11 @@ define([
     }
 
 
-    /**
-    * Define a query plugin
-    */
-    var dataID = "ColorPicker.id";
-    
-    function Plugin(opts, extra) {
-
-        if (typeof opts == "string") {
-
-            var returnValue = this;
-            var args = Array.prototype.slice.call( arguments, 1 );
-
-            this.each(function () {
-                var spect = pickers[$(this).data(dataID)];
-                if (spect) {
-                    var method = spect[opts];
-                    if (!method) {
-                        throw new Error( "skylark-ui-colorpicker: no such method: '" + opts + "'" );
-                    }
-
-                    if (opts == "get") {
-                        returnValue = spect.get();
-                    }
-                    else if (opts == "container") {
-                        returnValue = spect.container;
-                    }
-                    else if (opts == "option") {
-                        returnValue = spect.option.apply(spect, args);
-                    }
-                    else if (opts == "destroy") {
-                        spect.destroy();
-                        $(this).removeData(dataID);
-                    }
-                    else {
-                        method.apply(spect, args);
-                    }
-                }
-            });
-
-            return returnValue;
-        }
-
-        // Initializing a new instance of ColorPicker
-        return this.colorPicker("destroy").each(function () {
-            var options = langx.mixin({}, $(this).data(), opts);
-            var spect = ColorPicker(this, options);
-            $(this).data(dataID, spect.id);
-        });
-    }
-
-    ColorPicker.load = true;
-    ColorPicker.loadOpts = {};
     ColorPicker.draggable = draggable;
-    ColorPicker.defaults = defaultOpts;
 
     ColorPicker.localization = { };
     ColorPicker.palettes = { };
 
-    $.fn.colorPicker = Plugin;
 
     return skylark.attach("domx.ColorPicker",ColorPicker);
 

@@ -824,13 +824,15 @@ define('skylark-langx-objects/objects',[
             if (safe && target[key] !== undefined) {
                 continue;
             }
-            if (deep && (isPlainObject(source[key]) || isArray(source[key]))) {
-                if (isPlainObject(source[key]) && !isPlainObject(target[key])) {
+            // if (deep && (isPlainObject(source[key]) || isArray(source[key]))) {
+            //    if (isPlainObject(source[key]) && !isPlainObject(target[key])) {
+            if (deep && isPlainObject(source[key])) {
+                if (!isPlainObject(target[key])) {
                     target[key] = {};
                 }
-                if (isArray(source[key]) && !isArray(target[key])) {
-                    target[key] = [];
-                }
+                //if (isArray(source[key]) && !isArray(target[key])) {
+                //    target[key] = [];
+                //}
                 _mixin(target[key], source[key], deep, safe);
             } else if (source[key] !== undefined) {
                 target[key] = source[key]
@@ -10768,9 +10770,401 @@ define('skylark-domx-fx/main',[
 });
 define('skylark-domx-fx', ['skylark-domx-fx/main'], function (main) { return main; });
 
+define('skylark-domx-plugins/plugins',[
+    "skylark-langx/skylark",
+    "skylark-langx/langx",
+    "skylark-domx-noder",
+    "skylark-domx-data",
+    "skylark-domx-eventer",
+    "skylark-domx-finder",
+    "skylark-domx-geom",
+    "skylark-domx-styler",
+    "skylark-domx-fx",
+    "skylark-domx-query",
+    "skylark-domx-velm"
+], function(skylark, langx, noder, datax, eventer, finder, geom, styler, fx, $, elmx) {
+    "use strict";
+
+    var slice = Array.prototype.slice,
+        concat = Array.prototype.concat,
+        pluginKlasses = {},
+        shortcuts = {};
+
+    /*
+     * Create or get or destory a plugin instance assocated with the element.
+     */
+    function instantiate(elm,pluginName,options) {
+        var pair = pluginName.split(":"),
+            instanceDataName = pair[1];
+        pluginName = pair[0];
+
+        if (!instanceDataName) {
+            instanceDataName = pluginName;
+        }
+
+        var pluginInstance = datax.data( elm, instanceDataName );
+
+        if (options === "instance") {
+            return pluginInstance;
+        } else if (options === "destroy") {
+            if (!pluginInstance) {
+                throw new Error ("The plugin instance is not existed");
+            }
+            pluginInstance.destroy();
+            datax.removeData( elm, pluginName);
+            pluginInstance = undefined;
+        } else {
+            if (!pluginInstance) {
+                if (options !== undefined && typeof options !== "object") {
+                    throw new Error ("The options must be a plain object");
+                }
+                var pluginKlass = pluginKlasses[pluginName]; 
+                pluginInstance = new pluginKlass(elm,options);
+                datax.data( elm, instanceDataName,pluginInstance );
+            } else if (options) {
+                pluginInstance.reset(options);
+            }
+        }
+
+        return pluginInstance;
+    }
+
+
+    function shortcutter(pluginName,extfn) {
+       /*
+        * Create or get or destory a plugin instance assocated with the element,
+        * and also you can execute the plugin method directory;
+        */
+        return function (elm,options) {
+            var  plugin = instantiate(elm, pluginName,"instance");
+            if ( options === "instance" ) {
+              return plugin || null;
+            }
+
+            if (!plugin) {
+                plugin = instantiate(elm, pluginName,typeof options == 'object' && options || {});
+                if (typeof options != "string") {
+                  return this;
+                }
+            } 
+            if (options) {
+                var args = slice.call(arguments,1); //2
+                if (extfn) {
+                    return extfn.apply(plugin,args);
+                } else {
+                    if (typeof options == 'string') {
+                        var methodName = options;
+
+                        if ( !plugin ) {
+                            throw new Error( "cannot call methods on " + pluginName +
+                                " prior to initialization; " +
+                                "attempted to call method '" + methodName + "'" );
+                        }
+
+                        if ( !langx.isFunction( plugin[ methodName ] ) || methodName.charAt( 0 ) === "_" ) {
+                            throw new Error( "no such method '" + methodName + "' for " + pluginName +
+                                " plugin instance" );
+                        }
+
+                        var ret = plugin[methodName].apply(plugin,args);
+                        if (ret == plugin) {
+                          ret = undefined;
+                        }
+
+                        return ret;
+                    }                
+                }                
+            }
+
+        }
+
+    }
+
+    /*
+     * Register a plugin type
+     */
+    function register( pluginKlass,shortcutName,instanceDataName,extfn) {
+        var pluginName = pluginKlass.prototype.pluginName;
+        
+        pluginKlasses[pluginName] = pluginKlass;
+
+        if (shortcutName) {
+            if (instanceDataName && langx.isFunction(instanceDataName)) {
+                extfn = instanceDataName;
+                instanceDataName = null;
+            } 
+            if (instanceDataName) {
+                pluginName = pluginName + ":" + instanceDataName;
+            }
+
+            var shortcut = shortcuts[shortcutName] = shortcutter(pluginName,extfn);
+                
+            $.fn[shortcutName] = function(options) {
+                var returnValue = this;
+
+                if ( !this.length && options === "instance" ) {
+                  returnValue = undefined;
+                } else {
+                  var args = slice.call(arguments);
+                  this.each(function () {
+                    var args2 = slice.call(args);
+                    args2.unshift(this);
+                    var  ret  = shortcut.apply(undefined,args2);
+                    if (ret !== undefined) {
+                        returnValue = ret;
+                    }
+                  });
+                }
+
+                return returnValue;
+            };
+
+            elmx.partial(shortcutName,function(options) {
+                var  ret  = shortcut(this._elm,options);
+                if (ret === undefined) {
+                    ret = this;
+                }
+                return ret;
+            });
+
+        }
+    }
+
+ 
+    var Plugin =   langx.Evented.inherit({
+        klassName: "Plugin",
+
+        _construct : function(elm,options) {
+           this._elm = elm;
+           this._initOptions(options);
+        },
+
+        _initOptions : function(options) {
+          var ctor = this.constructor,
+              cache = ctor.cache = ctor.cache || {},
+              defaults = cache.defaults;
+          if (!defaults) {
+            var  ctors = [];
+            do {
+              ctors.unshift(ctor);
+              if (ctor === Plugin) {
+                break;
+              }
+              ctor = ctor.superclass;
+            } while (ctor);
+
+            defaults = cache.defaults = {};
+            for (var i=0;i<ctors.length;i++) {
+              ctor = ctors[i];
+              if (ctor.prototype.hasOwnProperty("options")) {
+                langx.mixin(defaults,ctor.prototype.options,true);
+              }
+              if (ctor.hasOwnProperty("options")) {
+                langx.mixin(defaults,ctor.options,true);
+              }
+            }
+          }
+          Object.defineProperty(this,"options",{
+            value :langx.mixin({},defaults,options,true)
+          });
+
+          //return this.options = langx.mixin({},defaults,options);
+          return this.options;
+        },
+
+
+        destroy: function() {
+            var that = this;
+
+            this._destroy();
+            // We can probably remove the unbind calls in 2.0
+            // all event bindings should go through this._on()
+            datax.removeData(this._elm,this.pluginName );
+        },
+
+        _destroy: langx.noop,
+
+        _delay: function( handler, delay ) {
+            function handlerProxy() {
+                return ( typeof handler === "string" ? instance[ handler ] : handler )
+                    .apply( instance, arguments );
+            }
+            var instance = this;
+            return setTimeout( handlerProxy, delay || 0 );
+        },
+
+        option: function( key, value ) {
+            var options = key;
+            var parts;
+            var curOption;
+            var i;
+
+            if ( arguments.length === 0 ) {
+
+                // Don't return a reference to the internal hash
+                return langx.mixin( {}, this.options );
+            }
+
+            if ( typeof key === "string" ) {
+
+                // Handle nested keys, e.g., "foo.bar" => { foo: { bar: ___ } }
+                options = {};
+                parts = key.split( "." );
+                key = parts.shift();
+                if ( parts.length ) {
+                    curOption = options[ key ] = langx.mixin( {}, this.options[ key ] );
+                    for ( i = 0; i < parts.length - 1; i++ ) {
+                        curOption[ parts[ i ] ] = curOption[ parts[ i ] ] || {};
+                        curOption = curOption[ parts[ i ] ];
+                    }
+                    key = parts.pop();
+                    if ( arguments.length === 1 ) {
+                        return curOption[ key ] === undefined ? null : curOption[ key ];
+                    }
+                    curOption[ key ] = value;
+                } else {
+                    if ( arguments.length === 1 ) {
+                        return this.options[ key ] === undefined ? null : this.options[ key ];
+                    }
+                    options[ key ] = value;
+                }
+            }
+
+            this._setOptions( options );
+
+            return this;
+        },
+
+        _setOptions: function( options ) {
+            var key;
+
+            for ( key in options ) {
+                this._setOption( key, options[ key ] );
+            }
+
+            return this;
+        },
+
+        _setOption: function( key, value ) {
+
+            this.options[ key ] = value;
+
+            return this;
+        },
+
+        getUID : function (prefix) {
+            prefix = prefix || "plugin";
+            do prefix += ~~(Math.random() * 1000000)
+            while (document.getElementById(prefix))
+            return prefix;
+        },
+
+        elm : function() {
+            return this._elm;
+        }
+
+    });
+
+    $.fn.plugin = function(name,options) {
+        var args = slice.call( arguments, 1 ),
+            self = this,
+            returnValue = this;
+
+        this.each(function(){
+            returnValue = instantiate.apply(self,[this,name].concat(args));
+        });
+        return returnValue;
+    };
+
+    elmx.partial("plugin",function(name,options) {
+        var args = slice.call( arguments, 1 );
+        return instantiate.apply(this,[this.domNode,name].concat(args));
+    }); 
+
+
+    function plugins() {
+        return plugins;
+    }
+     
+    langx.mixin(plugins, {
+        instantiate,
+        Plugin,
+        register,
+        shortcuts
+    });
+
+    return  skylark.attach("domx.plugins",plugins);
+});
+define('skylark-domx-plugins/main',[
+	"./plugins"
+],function(plugins){
+	return plugins;
+});
+define('skylark-domx-plugins', ['skylark-domx-plugins/main'], function (main) { return main; });
+
+define('skylark-domx-popups/popups',[
+	"skylark-langx-ns"
+],function(skylark){
+	return skylark.attach("domx.popups",{});
+});
+define('skylark-domx-popups/calcOffset',[
+	"skylark-domx-geom",
+	"./popups"
+],function(
+	geom,
+	popups
+){
+    /**
+    * checkOffset - get the offset below/above and left/right element depending on screen position
+    * Thanks https://github.com/jquery/jquery-ui/blob/master/ui/jquery.ui.datepicker.js
+    */
+    function calcOffset(popup, ref) {
+        var extraY = 0;
+        var dpSize = geom.size(popup);
+        var dpWidth = dpSize.width;
+        var dpHeight = dpSize.height;
+        var refHeight = geom.height(ref);
+        var doc = popup.ownerDocument;
+        var docElem = doc.documentElement;
+        var viewWidth = docElem.clientWidth + geom.scrollLeft(doc);
+        var viewHeight = docElem.clientHeight + geom.scrollTop(doc);
+        var offset = geom.pagePosition(ref);
+        var offsetLeft = offset.left;
+        var offsetTop = offset.top;
+
+        offsetTop += refHeight;
+
+        offsetLeft -=
+            Math.min(offsetLeft, (offsetLeft + dpWidth > viewWidth && viewWidth > dpWidth) ?
+            Math.abs(offsetLeft + dpWidth - viewWidth) : 0);
+
+        offsetTop -=
+            Math.min(offsetTop, ((offsetTop + dpHeight > viewHeight && viewHeight > dpHeight) ?
+            Math.abs(dpHeight + refHeight - extraY) : extraY));
+
+        return {
+            top: offsetTop,
+            bottom: offset.bottom,
+            left: offsetLeft,
+            right: offset.right,
+            width: offset.width,
+            height: offset.height
+        };
+    }
+
+    return popups.calcOffset = calcOffset;
+		
+});
+define('skylark-domx-popups/main',[
+	"./popups",
+	"./calcOffset"
+],function(popups){
+	return popups;
+});
+define('skylark-domx-popups', ['skylark-domx-popups/main'], function (main) { return main; });
+
  define('skylark-graphics-color/_names',[
 ],function() {
-
      // Big List of Colors
     // ------------------
     // <http://www.w3.org/TR/css3-color/#svg-color>
@@ -10933,7 +11327,6 @@ define('skylark-domx-fx', ['skylark-domx-fx/main'], function (main) { return mai
  define('skylark-graphics-color/_hexNames',[
     "./_names"
 ],function(names) {
-
     // Utilities
     // ---------
 
@@ -10953,7 +11346,6 @@ define('skylark-domx-fx', ['skylark-domx-fx/main'], function (main) { return mai
 
 
 define('skylark-graphics-color/_conversion',[
-
 ],function(
 ){
     var math = Math,
@@ -11953,7 +12345,6 @@ define('skylark-graphics-color/misc',[
     // Utility Functions
     // ---------------------
 
-
     // Readability Functions
     // ---------------------
     // <http://www.w3.org/TR/AERT#color-contrast>
@@ -12033,7 +12424,6 @@ define('skylark-graphics-color/main',[
     "./misc",
     "./parse"
 ], function(Color) {
-
 	return Color;
 });
 define('skylark-graphics-color', ['skylark-graphics-color/main'], function (main) { return main; });
@@ -12150,56 +12540,16 @@ define('skylark-domx-colorpicker/ColorPicker',[
     "skylark-domx-eventer",
     "skylark-domx-styler",
     "skylark-domx-fx",
+    "skylark-domx-plugins",
+    "skylark-domx-popups",
     "skylark-graphics-color",
     "./draggable"
-],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,Color,draggable) {
+],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,plugins,popups,Color,draggable) {
     "use strict";
 
     var noop = langx.noop;
 
-    var defaultOpts = {
-
-        // Callbacks
-        beforeShow: noop,
-        move: noop,
-        change: noop,
-        show: noop,
-        hide: noop,
-
-        // Options
-        color: false,
-        flat: false,
-        showInput: false,
-        allowEmpty: false,
-        showButtons: true,
-        clickoutFiresChange: true,
-        showInitial: false,
-        showPalette: false,
-        showPaletteOnly: false,
-        hideAfterPaletteSelect: false,
-        togglePaletteOnly: false,
-        showSelectionPalette: true,
-        localStorageKey: false,
-        appendTo: "body",
-        maxSelectionSize: 7,
-        cancelText: "cancel",
-        chooseText: "choose",
-        togglePaletteMoreText: "more",
-        togglePaletteLessText: "less",
-        clearText: "Clear Color Selection",
-        noColorSelectedText: "No Color Selected",
-        preferredFormat: false,
-        className: "", // Deprecated - use containerClassName and replacerClassName instead.
-        containerClassName: "",
-        replacerClassName: "",
-        showAlpha: false,
-        theme: "sp-light",
-        palette: [["#ffffff", "#000000", "#ff0000", "#ff8000", "#ffff00", "#008000", "#0000ff", "#4b0082", "#9400d3"]],
-        selectionPalette: [],
-        disabled: false,
-        offset: null
-    },
-    pickers = [],
+    var pickers = [],
     replaceInput = [
         "<div class='sp-replacer'>",
             "<div class='sp-preview'><div class='sp-preview-inner'></div></div>",
@@ -12291,32 +12641,68 @@ define('skylark-domx-colorpicker/ColorPicker',[
         }
     }
 
-    function instanceOptions(o, callbackContext) {
-        var opts = langx.mixin({}, defaultOpts, o);
-        opts.callbacks = {
-            'move': bind(opts.move, callbackContext),
-            'change': bind(opts.change, callbackContext),
-            'show': bind(opts.show, callbackContext),
-            'hide': bind(opts.hide, callbackContext),
-            'beforeShow': bind(opts.beforeShow, callbackContext)
-        };
 
-        return opts;
-    }
-
-
-
-    var ColorPicker = langx.Evented.inherit({
+    var ColorPicker = plugins.Plugin.inherit({
         klassName : "ColorPicker",
 
-        init:function (element, o) {
+        pluginName : "domx.colorPicker",
 
-            var opts = instanceOptions(o, element),
+        options : {
+
+            // Callbacks
+            beforeShow: noop,
+            move: noop,
+            change: noop,
+            show: noop,
+            hide: noop,
+
+            // Options
+            color: false,
+            flat: false,
+            showInput: false,
+            allowEmpty: false,
+            showButtons: true,
+            clickoutFiresChange: true,
+            showInitial: false,
+            showPalette: false,
+            showPaletteOnly: false,
+            hideAfterPaletteSelect: false,
+            togglePaletteOnly: false,
+            showSelectionPalette: true,
+            localStorageKey: false,
+            appendTo: "body",
+            maxSelectionSize: 7,
+            cancelText: "cancel",
+            chooseText: "choose",
+            togglePaletteMoreText: "more",
+            togglePaletteLessText: "less",
+            clearText: "Clear Color Selection",
+            noColorSelectedText: "No Color Selected",
+            preferredFormat: false,
+            className: "", // Deprecated - use containerClassName and replacerClassName instead.
+            containerClassName: "",
+            replacerClassName: "",
+            showAlpha: false,
+            theme: "sp-light",
+            palette: [
+                ["#ffffff", "#000000", "#ff0000", "#ff8000", "#ffff00", "#008000", "#0000ff", "#4b0082", "#9400d3"]
+            ],
+            selectionPalette: [],
+            disabled: false,
+            offset: null
+
+        },
+
+         _construct: function(elm, options) {
+            this.overrided(elm,options);
+
+
+
+            var opts = this.options,
+                element = this._elm,
                 flat = opts.flat,
                 showSelectionPalette = opts.showSelectionPalette,
-                localStorageKey = opts.localStorageKey,
                 theme = opts.theme,
-                callbacks = opts.callbacks,
                 resize = langx.debounce(reflow, 10),
                 visible = false,
                 isDragging = false,
@@ -12339,6 +12725,15 @@ define('skylark-domx-colorpicker/ColorPicker',[
                 maxSelectionSize = opts.maxSelectionSize,
                 draggingClass = "sp-dragging",
                 shiftMovementDirection = null;
+
+
+            var callbacks = opts.callbacks = {
+                'move': bind(opts.move, elm),
+                'change': bind(opts.change, elm),
+                'show': bind(opts.show, elm),
+                'hide': bind(opts.hide, elm),
+                'beforeShow': bind(opts.beforeShow, elm)
+            };
 
             var doc = element.ownerDocument,
                 body = doc.body,
@@ -12435,8 +12830,6 @@ define('skylark-domx-colorpicker/ColorPicker',[
 
                     appendTo.append(container);
                 }
-
-                updateSelectionPaletteFromStorage();
 
                 offsetElement.on("click.ColorPicker touchstart.ColorPicker", function (e) {
                     if (!disabled) {
@@ -12615,28 +13008,6 @@ define('skylark-domx-colorpicker/ColorPicker',[
                 initialColorContainer.on(paletteEvent, ".sp-thumb-el:nth-child(1)", { ignore: true }, paletteElementClick);
             }
 
-            function updateSelectionPaletteFromStorage() {
-
-                if (localStorageKey && window.localStorage) {
-
-                    // Migrate old palettes over to new format.  May want to remove this eventually.
-                    try {
-                        var oldPalette = window.localStorage[localStorageKey].split(",#");
-                        if (oldPalette.length > 1) {
-                            delete window.localStorage[localStorageKey];
-                            langx.each(oldPalette, function(i, c) {
-                                 addColorToSelectionPalette(c);
-                            });
-                        }
-                    }
-                    catch(e) { }
-
-                    try {
-                        selectionPalette = window.localStorage[localStorageKey].split(";");
-                    }
-                    catch (e) { }
-                }
-            }
 
             function addColorToSelectionPalette(color) {
                 if (showSelectionPalette) {
@@ -12646,13 +13017,6 @@ define('skylark-domx-colorpicker/ColorPicker',[
                         while(selectionPalette.length > maxSelectionSize) {
                             selectionPalette.shift();
                         }
-                    }
-
-                    if (localStorageKey && window.localStorage) {
-                        try {
-                            window.localStorage[localStorageKey] = selectionPalette.join(";");
-                        }
-                        catch(e) { }
                     }
                 }
             }
@@ -12679,8 +13043,6 @@ define('skylark-domx-colorpicker/ColorPicker',[
                 var html = langx.map(paletteArray, function (palette, i) {
                     return paletteTemplate(palette, currentColor, "sp-palette-row sp-palette-row-" + i, opts);
                 });
-
-                updateSelectionPaletteFromStorage();
 
                 if (selectionPalette) {
                     html.push(paletteTemplate(getUniqueSelectionPalette(), currentColor, "sp-palette-row sp-palette-row-selection", opts));
@@ -12735,6 +13097,31 @@ define('skylark-domx-colorpicker/ColorPicker',[
                 }
             }
 
+
+            function onkeydown(e) {
+                // Close on ESC
+                if (e.keyCode === 27) {
+                    hide();
+                }
+            }
+
+            function clickout(e) {
+                // Return on right click.
+                if (e.button == 2) { return; }
+
+                // If a drag event was happening during the mouseup, don't hide
+                // on click.
+                if (isDragging) { return; }
+
+                if (clickoutFiresChange) {
+                    updateOriginalInput(true);
+                }
+                else {
+                    revert();
+                }
+                hide();
+            }
+
             function toggle() {
                 if (visible) {
                     hide();
@@ -12776,31 +13163,6 @@ define('skylark-domx-colorpicker/ColorPicker',[
                 callbacks.show(colorOnShow);
                 boundElement.trigger('show.ColorPicker', [ colorOnShow ]);
             }
-
-            function onkeydown(e) {
-                // Close on ESC
-                if (e.keyCode === 27) {
-                    hide();
-                }
-            }
-
-            function clickout(e) {
-                // Return on right click.
-                if (e.button == 2) { return; }
-
-                // If a drag event was happening during the mouseup, don't hide
-                // on click.
-                if (isDragging) { return; }
-
-                if (clickoutFiresChange) {
-                    updateOriginalInput(true);
-                }
-                else {
-                    revert();
-                }
-                hide();
-            }
-
             function hide() {
                 // Return if hiding is unnecessary
                 if (!visible || flat) { return; }
@@ -13044,7 +13406,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     if (opts.offset) {
                         container.offset(opts.offset);
                     } else {
-                        container.offset(getOffset(container, offsetElement));
+                        container.offset(popups.calcOffset(container[0], offsetElement[0]));
                     }
                 }
 
@@ -13101,7 +13463,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
 
             initialize();
 
-            var spect = {
+            langx.mixin(this, {
                 show: show,
                 hide: hide,
                 toggle: toggle,
@@ -13117,51 +13479,12 @@ define('skylark-domx-colorpicker/ColorPicker',[
                 get: get,
                 destroy: destroy,
                 container: container
-            };
-
-            spect.id = pickers.push(spect) - 1;
-
-            return spect;
+            });
         }
     });
 
 
-    /**
-    * checkOffset - get the offset below/above and left/right element depending on screen position
-    * Thanks https://github.com/jquery/jquery-ui/blob/master/ui/jquery.ui.datepicker.js
-    */
-    function getOffset(picker, input) {
-        var extraY = 0;
-        var dpWidth = picker.outerWidth();
-        var dpHeight = picker.outerHeight();
-        var inputHeight = input.outerHeight();
-        var doc = picker[0].ownerDocument;
-        var docElem = doc.documentElement;
-        var viewWidth = docElem.clientWidth + $(doc).scrollLeft();
-        var viewHeight = docElem.clientHeight + $(doc).scrollTop();
-        var offset = input.offset();
-        var offsetLeft = offset.left;
-        var offsetTop = offset.top;
-
-        offsetTop += inputHeight;
-
-        offsetLeft -=
-            Math.min(offsetLeft, (offsetLeft + dpWidth > viewWidth && viewWidth > dpWidth) ?
-            Math.abs(offsetLeft + dpWidth - viewWidth) : 0);
-
-        offsetTop -=
-            Math.min(offsetTop, ((offsetTop + dpHeight > viewHeight && viewHeight > dpHeight) ?
-            Math.abs(dpHeight + inputHeight - extraY) : extraY));
-
-        return {
-            top: offsetTop,
-            bottom: offset.bottom,
-            left: offsetLeft,
-            right: offset.right,
-            width: offset.width,
-            height: offset.height
-        };
-    }
+    plugins.register(ColorPicker,"colorPicker");
 
     /**
     * stopPropagation - makes the code only doing this a little easier to read in line
@@ -13183,65 +13506,11 @@ define('skylark-domx-colorpicker/ColorPicker',[
     }
 
 
-    /**
-    * Define a query plugin
-    */
-    var dataID = "ColorPicker.id";
-    
-    function Plugin(opts, extra) {
-
-        if (typeof opts == "string") {
-
-            var returnValue = this;
-            var args = Array.prototype.slice.call( arguments, 1 );
-
-            this.each(function () {
-                var spect = pickers[$(this).data(dataID)];
-                if (spect) {
-                    var method = spect[opts];
-                    if (!method) {
-                        throw new Error( "skylark-ui-colorpicker: no such method: '" + opts + "'" );
-                    }
-
-                    if (opts == "get") {
-                        returnValue = spect.get();
-                    }
-                    else if (opts == "container") {
-                        returnValue = spect.container;
-                    }
-                    else if (opts == "option") {
-                        returnValue = spect.option.apply(spect, args);
-                    }
-                    else if (opts == "destroy") {
-                        spect.destroy();
-                        $(this).removeData(dataID);
-                    }
-                    else {
-                        method.apply(spect, args);
-                    }
-                }
-            });
-
-            return returnValue;
-        }
-
-        // Initializing a new instance of ColorPicker
-        return this.colorPicker("destroy").each(function () {
-            var options = langx.mixin({}, $(this).data(), opts);
-            var spect = ColorPicker(this, options);
-            $(this).data(dataID, spect.id);
-        });
-    }
-
-    ColorPicker.load = true;
-    ColorPicker.loadOpts = {};
     ColorPicker.draggable = draggable;
-    ColorPicker.defaults = defaultOpts;
 
     ColorPicker.localization = { };
     ColorPicker.palettes = { };
 
-    $.fn.colorPicker = Plugin;
 
     return skylark.attach("domx.ColorPicker",ColorPicker);
 
