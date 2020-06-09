@@ -11,8 +11,8 @@ define([
     "skylark-domx-plugins",
     "skylark-domx-popups",
     "skylark-graphics-color",
-    "./draggable"
-],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,plugins,popups,Color,draggable) {
+    "./Indicator"
+],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,plugins,popups,Color,Indicator) {
     "use strict";
 
     var noop = langx.noop;
@@ -379,57 +379,68 @@ define([
                     applyOptions();
                 });
 
-                draggable(alphaSlider, function (dragX, dragY, e) {
-                    currentAlpha = (dragX / alphaWidth);
-                    isEmpty = false;
-                    if (e.shiftKey) {
-                        currentAlpha = Math.round(currentAlpha * 10) / 10;
-                    }
+                alphaSlider.plugin("domx.indicator", {
+                    "onmove" :   function (dragX, dragY, e) {
+                        currentAlpha = (dragX / alphaWidth);
+                        isEmpty = false;
+                        if (e.shiftKey) {
+                            currentAlpha = Math.round(currentAlpha * 10) / 10;
+                        }
 
-                    move();
-                }, dragStart, dragStop);
+                        move();
+                    }, 
+                    "onstart" : dragStart, 
+                    "onstop" :dragStop
+                });
 
-                draggable(slider, function (dragX, dragY) {
-                    currentHue = parseFloat(dragY / slideHeight);
-                    isEmpty = false;
-                    if (!opts.showAlpha) {
-                        currentAlpha = 1;
-                    }
-                    move();
-                }, dragStart, dragStop);
+                slider.plugin("domx.indicator", {
+                    "onmove" :   function (dragX, dragY, e) {
+                        currentHue = parseFloat(dragY / slideHeight);
+                        isEmpty = false;
+                        if (!opts.showAlpha) {
+                            currentAlpha = 1;
+                        }
+                        move();
+                    }, 
+                    "onstart" : dragStart, 
+                    "onstop" :dragStop
+                });
 
-                draggable(dragger, function (dragX, dragY, e) {
+                dragger.plugin("domx.indicator", {
+                    "onmove" :   function (dragX, dragY, e) {
 
-                    // shift+drag should snap the movement to either the x or y axis.
-                    if (!e.shiftKey) {
-                        shiftMovementDirection = null;
-                    }
-                    else if (!shiftMovementDirection) {
-                        var oldDragX = currentSaturation * dragWidth;
-                        var oldDragY = dragHeight - (currentValue * dragHeight);
-                        var furtherFromX = Math.abs(dragX - oldDragX) > Math.abs(dragY - oldDragY);
+                        // shift+drag should snap the movement to either the x or y axis.
+                        if (!e.shiftKey) {
+                            shiftMovementDirection = null;
+                        }
+                        else if (!shiftMovementDirection) {
+                            var oldDragX = currentSaturation * dragWidth;
+                            var oldDragY = dragHeight - (currentValue * dragHeight);
+                            var furtherFromX = Math.abs(dragX - oldDragX) > Math.abs(dragY - oldDragY);
 
-                        shiftMovementDirection = furtherFromX ? "x" : "y";
-                    }
+                            shiftMovementDirection = furtherFromX ? "x" : "y";
+                        }
 
-                    var setSaturation = !shiftMovementDirection || shiftMovementDirection === "x";
-                    var setValue = !shiftMovementDirection || shiftMovementDirection === "y";
+                        var setSaturation = !shiftMovementDirection || shiftMovementDirection === "x";
+                        var setValue = !shiftMovementDirection || shiftMovementDirection === "y";
 
-                    if (setSaturation) {
-                        currentSaturation = parseFloat(dragX / dragWidth);
-                    }
-                    if (setValue) {
-                        currentValue = parseFloat((dragHeight - dragY) / dragHeight);
-                    }
+                        if (setSaturation) {
+                            currentSaturation = parseFloat(dragX / dragWidth);
+                        }
+                        if (setValue) {
+                            currentValue = parseFloat((dragHeight - dragY) / dragHeight);
+                        }
 
-                    isEmpty = false;
-                    if (!opts.showAlpha) {
-                        currentAlpha = 1;
-                    }
+                        isEmpty = false;
+                        if (!opts.showAlpha) {
+                            currentAlpha = 1;
+                        }
 
-                    move();
-
-                }, dragStart, dragStop);
+                        move();
+                    }, 
+                    "onstart" : dragStart, 
+                    "onstop" :dragStop
+                });
 
                 if (!!initialColor) {
                     set(initialColor);
@@ -972,9 +983,6 @@ define([
             return func.apply(obj, args.concat(slice.call(arguments)));
         };
     }
-
-
-    ColorPicker.draggable = draggable;
 
     ColorPicker.localization = { };
     ColorPicker.palettes = { };

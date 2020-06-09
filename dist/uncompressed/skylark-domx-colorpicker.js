@@ -86,15 +86,16 @@
 
 })(function(define,require) {
 
-define('skylark-domx-colorpicker/draggable',[
+define('skylark-domx-colorpicker/Indicator',[
    "skylark-langx/skylark",
     "skylark-langx/langx",
     "skylark-domx-browser",
     "skylark-domx-noder",
     "skylark-domx-eventer",
     "skylark-domx-finder",
-    "skylark-domx-query"
-],function(skylark, langx, browser, noder, eventer,finder, $) {
+    "skylark-domx-query",
+    "skylark-domx-plugins"    
+],function(skylark, langx, browser, noder, eventer,finder, $,plugins) {
     /**
     * Lightweight drag helper.  Handles containment within the element, so that
     * when dragging, the x is within [0,element.width] and y is within [0,element.height]
@@ -152,6 +153,8 @@ define('skylark-domx-colorpicker/draggable',[
         function start(e) {
             var rightclick = (e.which) ? (e.which == 3) : (e.button == 2);
 
+            var onstart = this.options.onstart || funcs.noop;
+
             if (!rightclick && !dragging) {
                 if (onstart.apply(element, arguments) !== false) {
                     dragging = true;
@@ -186,7 +189,97 @@ define('skylark-domx-colorpicker/draggable',[
         $(element).on("touchstart mousedown", start);
     }
 	
-	return draggable;
+
+    var Indicator = plugins.Plugin.inherit({
+        klassName : "Indicator",
+
+        pluginName : "domx.indicator",
+
+        options : {
+        },
+
+        _construct: function(elm, options) {
+            this.overrided(elm,options);
+
+            this.listenTo(this._velm(elm),"mousedown" , (e) => {
+                this._start(e);
+            });
+
+        },
+
+        _move : function(e) {
+            if (this._dragging) {
+                var offset = this._offset,
+                    pageX = e.pageX,
+                    pageY = e.pageY,
+                    maxWidth = this._maxWidth,
+                    maxHeight = this._maxHeight;
+
+                var dragX = Math.max(0, Math.min(pageX - offset.left, maxWidth));
+                var dragY = Math.max(0, Math.min(pageY - offset.top, maxHeight));
+
+                var onmove = this.options.onmove;
+                if (onmove) {
+                    onmove.apply(this._elm, [dragX, dragY, e]);
+                }
+            }
+        },
+
+        _start : function(e) {
+            var rightclick = (e.which) ? (e.which == 3) : (e.button == 2);
+
+            if (!rightclick && !this._dragging) {
+                var onstart = this.options.onstart;
+                if (!onstart || onstart.apply(this._elm, arguments) !== false) {
+                    this._dragging = true;
+                    var $el = this._query();
+
+                    this._maxHeight = $el.height();
+                    this._maxWidth = $el.width();
+                    this._offset = $el.offset();
+
+                    var $doc = this._query(document)
+
+                    this.listenTo($doc,{
+                        "mousemove" : (e) => {
+                            this._move(e);
+                        },
+                        "mouseup" : (e) => {
+                            this._stop(e);
+                        }                
+                    });
+                    $doc.find("body").addClass("sp-dragging");
+
+                    this._move(e);
+
+                    eventer.stop(e);
+                }
+            }
+        },
+
+        _stop : function(e) {
+            var $doc = this._query(document);
+            if (this._dragging) {
+                this.unlistenTo($doc);
+                $doc.find("body").removeClass("sp-dragging");
+
+                onstop = this.options.onstop;
+
+                // Wait a tick before notifying observers to allow the click event
+                // to fire in Chrome.
+                if (onstop) {
+                    this._delay(function() {
+                        onstop.apply(this._elm, arguments);
+                    });
+                }
+            }
+            this._dragging = false;            
+        }
+    });
+
+    plugins.register(Indicator);
+
+	return Indicator;
 });
 define('skylark-domx-colorpicker/ColorPicker',[
    "skylark-langx/skylark",
@@ -201,8 +294,8 @@ define('skylark-domx-colorpicker/ColorPicker',[
     "skylark-domx-plugins",
     "skylark-domx-popups",
     "skylark-graphics-color",
-    "./draggable"
-],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,plugins,popups,Color,draggable) {
+    "./Indicator"
+],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,plugins,popups,Color,Indicator) {
     "use strict";
 
     var noop = langx.noop;
@@ -569,57 +662,68 @@ define('skylark-domx-colorpicker/ColorPicker',[
                     applyOptions();
                 });
 
-                draggable(alphaSlider, function (dragX, dragY, e) {
-                    currentAlpha = (dragX / alphaWidth);
-                    isEmpty = false;
-                    if (e.shiftKey) {
-                        currentAlpha = Math.round(currentAlpha * 10) / 10;
-                    }
+                alphaSlider.plugin("domx.indicator", {
+                    "onmove" :   function (dragX, dragY, e) {
+                        currentAlpha = (dragX / alphaWidth);
+                        isEmpty = false;
+                        if (e.shiftKey) {
+                            currentAlpha = Math.round(currentAlpha * 10) / 10;
+                        }
 
-                    move();
-                }, dragStart, dragStop);
+                        move();
+                    }, 
+                    "onstart" : dragStart, 
+                    "onstop" :dragStop
+                });
 
-                draggable(slider, function (dragX, dragY) {
-                    currentHue = parseFloat(dragY / slideHeight);
-                    isEmpty = false;
-                    if (!opts.showAlpha) {
-                        currentAlpha = 1;
-                    }
-                    move();
-                }, dragStart, dragStop);
+                slider.plugin("domx.indicator", {
+                    "onmove" :   function (dragX, dragY, e) {
+                        currentHue = parseFloat(dragY / slideHeight);
+                        isEmpty = false;
+                        if (!opts.showAlpha) {
+                            currentAlpha = 1;
+                        }
+                        move();
+                    }, 
+                    "onstart" : dragStart, 
+                    "onstop" :dragStop
+                });
 
-                draggable(dragger, function (dragX, dragY, e) {
+                dragger.plugin("domx.indicator", {
+                    "onmove" :   function (dragX, dragY, e) {
 
-                    // shift+drag should snap the movement to either the x or y axis.
-                    if (!e.shiftKey) {
-                        shiftMovementDirection = null;
-                    }
-                    else if (!shiftMovementDirection) {
-                        var oldDragX = currentSaturation * dragWidth;
-                        var oldDragY = dragHeight - (currentValue * dragHeight);
-                        var furtherFromX = Math.abs(dragX - oldDragX) > Math.abs(dragY - oldDragY);
+                        // shift+drag should snap the movement to either the x or y axis.
+                        if (!e.shiftKey) {
+                            shiftMovementDirection = null;
+                        }
+                        else if (!shiftMovementDirection) {
+                            var oldDragX = currentSaturation * dragWidth;
+                            var oldDragY = dragHeight - (currentValue * dragHeight);
+                            var furtherFromX = Math.abs(dragX - oldDragX) > Math.abs(dragY - oldDragY);
 
-                        shiftMovementDirection = furtherFromX ? "x" : "y";
-                    }
+                            shiftMovementDirection = furtherFromX ? "x" : "y";
+                        }
 
-                    var setSaturation = !shiftMovementDirection || shiftMovementDirection === "x";
-                    var setValue = !shiftMovementDirection || shiftMovementDirection === "y";
+                        var setSaturation = !shiftMovementDirection || shiftMovementDirection === "x";
+                        var setValue = !shiftMovementDirection || shiftMovementDirection === "y";
 
-                    if (setSaturation) {
-                        currentSaturation = parseFloat(dragX / dragWidth);
-                    }
-                    if (setValue) {
-                        currentValue = parseFloat((dragHeight - dragY) / dragHeight);
-                    }
+                        if (setSaturation) {
+                            currentSaturation = parseFloat(dragX / dragWidth);
+                        }
+                        if (setValue) {
+                            currentValue = parseFloat((dragHeight - dragY) / dragHeight);
+                        }
 
-                    isEmpty = false;
-                    if (!opts.showAlpha) {
-                        currentAlpha = 1;
-                    }
+                        isEmpty = false;
+                        if (!opts.showAlpha) {
+                            currentAlpha = 1;
+                        }
 
-                    move();
-
-                }, dragStart, dragStop);
+                        move();
+                    }, 
+                    "onstart" : dragStart, 
+                    "onstop" :dragStop
+                });
 
                 if (!!initialColor) {
                     set(initialColor);
@@ -1162,9 +1266,6 @@ define('skylark-domx-colorpicker/ColorPicker',[
             return func.apply(obj, args.concat(slice.call(arguments)));
         };
     }
-
-
-    ColorPicker.draggable = draggable;
 
     ColorPicker.localization = { };
     ColorPicker.palettes = { };
