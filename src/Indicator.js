@@ -113,7 +113,7 @@ define([
         _construct: function(elm, options) {
             this.overrided(elm,options);
 
-            this.listenTo(this._velm(elm),"mousedown" , (e) => {
+            this.listenTo(this.elmx(),"mousedown" , (e) => {
                 this._start(e);
             });
 
@@ -144,13 +144,13 @@ define([
                 var onstart = this.options.onstart;
                 if (!onstart || onstart.apply(this._elm, arguments) !== false) {
                     this._dragging = true;
-                    var $el = this._query();
+                    var $el = this.$();
 
                     this._maxHeight = $el.height();
                     this._maxWidth = $el.width();
                     this._offset = $el.offset();
 
-                    var $doc = this._query(document)
+                    var $doc = this.$(document)
 
                     this.listenTo($doc,{
                         "mousemove" : (e) => {
@@ -170,7 +170,7 @@ define([
         },
 
         _stop : function(e) {
-            var $doc = this._query(document);
+            var $doc = this.$(document);
             if (this._dragging) {
                 this.unlistenTo($doc);
                 $doc.find("body").removeClass("sp-dragging");
