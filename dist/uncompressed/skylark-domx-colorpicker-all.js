@@ -2768,7 +2768,7 @@ define('skylark-langx-events/Listener',[
                 //listenTo(obj,callbacks,one)
                 var callbacks = event;
                 for (var name in callbacks) {
-                    this.listenTo(obj,name,callbacks[name],one);
+                    this.listeningTo(obj,name,callbacks[name],one);
                 }
                 return this;
             }
@@ -3078,7 +3078,7 @@ define('skylark-langx-events/Emitter',[
     });
 
 
-    return　events.Emitter = Emitter;
+    return events.Emitter = Emitter;
 
 });
 define('skylark-langx/Emitter',[
