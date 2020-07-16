@@ -204,7 +204,7 @@ requirejs.config({
            main: 'main'
          },         
           {
-            name: 'skylark-domx-colorpicker',
+            name: 'skylark-domx-colorer',
             location : "../src",
             main: 'main'
           }                   
@@ -214,7 +214,7 @@ requirejs.config({
  
 // require(["module/name", ...], function(params){ ... });
 require(["skylark-domx-query"], function ($) {
-    require(["skylark-domx-colorpicker"], function (ColorPicker) {
+    require(["skylark-domx-colorer"], function (ColorPicker) {
         if (window.initPage) {
             window.initPage($,ColorPicker);
         }
