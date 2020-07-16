@@ -1,8 +1,8 @@
 /**
- * skylark-domx-colorpicker - The skylark dom plugin for picking color 
+ * skylark-domx-colorer - The skylark dom plugin for picking color 
  * @author Hudaokeji, Inc.
  * @version v0.9.0
- * @link https://github.com/skylark-domx/skylark-domx-colorpicker/
+ * @link https://github.com/skylark-domx/skylark-domx-colorer/
  * @license MIT
  */
 (function(factory,globals) {
@@ -86,7 +86,7 @@
 
 })(function(define,require) {
 
-define('skylark-domx-colorpicker/Indicator',[
+define('skylark-domx-colorer/Indicator',[
    "skylark-langx/skylark",
     "skylark-langx/langx",
     "skylark-domx-browser",
@@ -281,7 +281,7 @@ define('skylark-domx-colorpicker/Indicator',[
 
 	return Indicator;
 });
-define('skylark-domx-colorpicker/ColorPicker',[
+define('skylark-domx-colorer/ColorPicker',[
    "skylark-langx/skylark",
     "skylark-langx/langx",
     "skylark-domx-browser",
@@ -1275,7 +1275,7 @@ define('skylark-domx-colorpicker/ColorPicker',[
 
 });
 
-define('skylark-domx-colorpicker/i18n/texts_ja',[
+define('skylark-domx-colorer/i18n/texts_ja',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["ja"] = {
@@ -1285,7 +1285,7 @@ define('skylark-domx-colorpicker/i18n/texts_ja',[
 
     return localization;
 });
-define('skylark-domx-colorpicker/i18n/texts_zh-cn',[
+define('skylark-domx-colorer/i18n/texts_zh-cn',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["zh-cn"] = {
@@ -1301,7 +1301,7 @@ define('skylark-domx-colorpicker/i18n/texts_zh-cn',[
 
 });
 
-define('skylark-domx-colorpicker/i18n/texts_zh-tw',[
+define('skylark-domx-colorer/i18n/texts_zh-tw',[
 	"../ColorPicker"
 ],function(ColorPicker) {
     var localization = ColorPicker.localization["zh-tw"] = {
@@ -1316,7 +1316,7 @@ define('skylark-domx-colorpicker/i18n/texts_zh-tw',[
     return localization;
 
 });
-define('skylark-domx-colorpicker/main',[
+define('skylark-domx-colorer/main',[
     "./ColorPicker",
     "./i18n/texts_ja",
     "./i18n/texts_zh-cn",
@@ -1325,8 +1325,8 @@ define('skylark-domx-colorpicker/main',[
     return ColorPicker;
 });
 
-define('skylark-domx-colorpicker', ['skylark-domx-colorpicker/main'], function (main) { return main; });
+define('skylark-domx-colorer', ['skylark-domx-colorer/main'], function (main) { return main; });
 
 
 },this);
-//# sourceMappingURL=sourcemaps/skylark-domx-colorpicker.js.map
+//# sourceMappingURL=sourcemaps/skylark-domx-colorer.js.map

@@ -1,22 +1,22 @@
 {
-  "name": "skylark-domx-colorpicker",
+  "name": "skylark-domx-colorer",
   "description": "The skylark dom plugin for picking color ",
   "version": "0.9.0",
   "keywords": [
     "skylark",
     "colorpicker"
   ],
-  "homepage": "https://github.com/skylark-domx/skylark-domx-colorpicker/",
+  "homepage": "https://github.com/skylark-domx/skylark-domx-colorer/",
   "author": "Hudaokeji, Inc.",
   "scripts": {
     "build": "sbundle build ."
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/skylark-domx/skylark-domx-colorpicker.git"
+    "url": "https://github.com/skylark-domx/skylark-domx-colorer.git"
   },
   "bugs": {
-    "url": "https://github.com/skylark-domx/skylark-domx-colorpicker/issues"
+    "url": "https://github.com/skylark-domx/skylark-domx-colorer/issues"
   },
   "license": "MIT",
   "dependencies": {
