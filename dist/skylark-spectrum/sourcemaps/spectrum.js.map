@@ -1,0 +1,1 @@
+{"version":3,"sources":["spectrum.js"],"names":["define","skylark","attach"],"mappings":";;;;;;;AAAAA,QACC,yBACC,SAASC,GACV,OAAOA,EAAQC,OAAO","file":"../spectrum.js","sourcesContent":["define([\r\n\t\"skylark-langx/skylark\"\r\n],function(skylark){\r\n\treturn skylark.attach(\"intg.spectrum\",{\r\n\r\n\t});\r\n});"]}

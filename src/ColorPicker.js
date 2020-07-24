@@ -11,8 +11,9 @@ define([
     "skylark-domx-plugins",
     "skylark-domx-popups",
     "skylark-graphics-color",
+    "./spectrum",
     "./Indicator"
-],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,plugins,popups,Color,Indicator) {
+],function(skylark, langx, browser, noder, finder, $,eventer, styler,fx,plugins,popups,Color,spectrum,Indicator) {
     "use strict";
 
     var noop = langx.noop;
@@ -113,7 +114,7 @@ define([
     var ColorPicker = plugins.Plugin.inherit({
         klassName : "ColorPicker",
 
-        pluginName : "domx.colorPicker",
+        pluginName : "spectrum.colorPicker",
 
         options : {
 
@@ -988,6 +989,6 @@ define([
     ColorPicker.palettes = { };
 
 
-    return skylark.attach("domx.ColorPicker",ColorPicker);
+    return spectrum.ColorPicker = ColorPicker;
 
 });

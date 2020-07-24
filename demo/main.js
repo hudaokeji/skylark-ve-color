@@ -19,6 +19,11 @@ requirejs.config({
             main: 'main'
          },
          {
+           name : "skylark-langx-binary",
+           location : "../node_modules/skylark-langx-binary/dist/uncompressed/skylark-langx-binary",
+            main: 'main'
+         },
+         {
            name : "skylark-langx-datetimes",
            location : "../node_modules/skylark-langx-datetimes/dist/uncompressed/skylark-langx-datetimes",
             main: 'main'
@@ -204,7 +209,7 @@ requirejs.config({
            main: 'main'
          },         
           {
-            name: 'skylark-domx-colorer',
+            name: 'skylark-spectrum',
             location : "../src",
             main: 'main'
           }                   
@@ -214,7 +219,7 @@ requirejs.config({
  
 // require(["module/name", ...], function(params){ ... });
 require(["skylark-domx-query"], function ($) {
-    require(["skylark-domx-colorer"], function (ColorPicker) {
+    require(["skylark-spectrum/ColorPicker"], function (ColorPicker) {
         if (window.initPage) {
             window.initPage($,ColorPicker);
         }
